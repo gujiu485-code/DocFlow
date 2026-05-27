@@ -1,4 +1,4 @@
-import { defaultEditorContent } from "@/lib/content";
+import { defaultEditorContent, emptyEditorContent } from "@/lib/content";
 
 export type KnowledgeStatus = "none" | "pending" | "indexed" | "failed" | "outdated";
 
@@ -35,13 +35,18 @@ export const createDocumentId = () => {
   return `doc-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 };
 
-export const createDocumentItem = (parentId: string | null = null, title = "Untitled", sortOrder = 0): DocumentItem => {
+export const createDocumentItem = (
+  parentId: string | null = null,
+  title = "Untitled",
+  sortOrder = 0,
+  contentJson: any = emptyEditorContent,
+): DocumentItem => {
   const now = new Date().toISOString();
 
   return {
     id: createDocumentId(),
     title,
-    contentJson: defaultEditorContent,
+    contentJson,
     contentText: "",
     parentId,
     sortOrder,
@@ -54,7 +59,7 @@ export const createDocumentItem = (parentId: string | null = null, title = "Unti
 export const createDraftDocument = (parentId: string | null = null): DraftDocument => ({
   parentId,
   title: "",
-  contentJson: defaultEditorContent,
+  contentJson: emptyEditorContent,
   contentText: "",
 });
 
@@ -75,7 +80,7 @@ export const materializeDraftDocument = (draftDocument: DraftDocument, sortOrder
 };
 
 export const createDefaultDocuments = (): DocumentItem[] => {
-  const root = createDocumentItem(null, "企业知识库示例文档");
+  const root = createDocumentItem(null, "企业知识库示例文档", 0, defaultEditorContent);
   const child = createDocumentItem(root.id, "产品需求评审记录");
   child.contentJson = {
     type: "doc",
@@ -101,7 +106,7 @@ const normalizeDocument = (value: Partial<DocumentItem> & Record<string, unknown
   return {
     id: typeof value.id === "string" ? value.id : createDocumentId(),
     title: typeof value.title === "string" ? value.title : "Untitled",
-    contentJson: value.contentJson ?? value.content ?? defaultEditorContent,
+    contentJson: value.contentJson ?? value.content ?? emptyEditorContent,
     contentText: typeof value.contentText === "string" ? value.contentText : typeof value.markdown === "string" ? value.markdown : "",
     parentId: typeof value.parentId === "string" ? value.parentId : null,
     sortOrder: typeof value.sortOrder === "number" ? value.sortOrder : 0,

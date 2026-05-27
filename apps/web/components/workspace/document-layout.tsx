@@ -97,7 +97,7 @@ export function DocumentLayout() {
     });
   };
 
-  const commitDraftDocument = (nextDraftDocument = draftDocument) => {
+  const commitDraftDocumentValue = (nextDraftDocument: DraftDocument | null) => {
     if (!nextDraftDocument || !nextDraftDocument.title.trim()) {
       const fallbackId = previousDocumentId && documents.some((document) => document.id === previousDocumentId) ? previousDocumentId : null;
       setDraftDocument(null);
@@ -118,6 +118,8 @@ export function DocumentLayout() {
 
     return nextDocument;
   };
+
+  const commitDraftDocument = () => commitDraftDocumentValue(draftDocument);
 
   const createDocument = (parentId: string | null = null) => {
     if (draftDocument?.title.trim()) {
@@ -213,7 +215,7 @@ export function DocumentLayout() {
       };
 
       if (nextDraftDocument.title.trim()) {
-        commitDraftDocument(nextDraftDocument);
+        commitDraftDocumentValue(nextDraftDocument);
       } else {
         setDraftDocument(nextDraftDocument);
       }

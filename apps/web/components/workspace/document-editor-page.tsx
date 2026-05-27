@@ -32,7 +32,7 @@ export function DocumentEditorPage({
 
       <div className="mx-auto max-w-screen-lg px-12 pb-24 pt-20">
         {onBack && (
-          <Button variant="ghost" size="sm" className="mb-6 gap-2 px-2 text-muted-foreground" onClick={onBack}>
+          <Button variant="ghost" size="sm" className="mb-6 gap-2 px-2 text-muted-foreground" onClick={() => onBack()}>
             {isDraft ? <Maximize2 className="h-4 w-4" /> : <ArrowLeft className="h-4 w-4" />}
             返回
           </Button>
