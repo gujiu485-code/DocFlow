@@ -1,0 +1,94 @@
+import { Button } from "@/components/tailwind/ui/button";
+import { DocumentTree } from "@/components/workspace/document-tree";
+import type { DocumentItem } from "@/lib/documents";
+import { closestCenter, DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
+import { Plus, Search } from "lucide-react";
+
+interface DocumentSidebarProps {
+  documents: DocumentItem[];
+  activeDocumentId: string | null;
+  expandedDocumentIds: Set<string>;
+  query: string;
+  onQueryChange: (query: string) => void;
+  onCreateRoot: () => void;
+  onCreateChild: (parentId: string) => void;
+  onToggle: (documentId: string) => void;
+  onSelect: (documentId: string) => void;
+  onRename: (documentId: string, title: string) => void;
+  onDelete: (documentId: string) => void;
+  onReorder: (activeId: string, overId: string) => void;
+}
+
+export function DocumentSidebar({
+  documents,
+  activeDocumentId,
+  expandedDocumentIds,
+  query,
+  onQueryChange,
+  onCreateRoot,
+  onCreateChild,
+  onToggle,
+  onSelect,
+  onRename,
+  onDelete,
+  onReorder,
+}: DocumentSidebarProps) {
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 6,
+      },
+    }),
+  );
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    const { active, over } = event;
+    if (!over || active.id === over.id) return;
+
+    onReorder(String(active.id), String(over.id));
+  };
+
+  return (
+    <aside className="flex h-screen w-72 shrink-0 flex-col border-r bg-[#fbfbfa] dark:bg-background">
+      <div className="px-4 py-4">
+        <div className="text-sm font-semibold">DocFlow AI</div>
+        <div className="mt-1 text-xs text-muted-foreground">企业知识库</div>
+      </div>
+
+      <div className="px-3 pb-3">
+        <Button variant="ghost" className="h-8 w-full justify-start gap-2 px-2 text-muted-foreground" onClick={onCreateRoot}>
+          <Plus className="h-4 w-4" />
+          新建文档
+        </Button>
+        <div className="mt-2 flex h-8 items-center gap-2 rounded-md bg-muted/70 px-2">
+          <Search className="h-4 w-4 text-muted-foreground" />
+          <input
+            value={query}
+            onChange={(event) => onQueryChange(event.target.value)}
+            className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
+            placeholder="搜索文档"
+          />
+        </div>
+      </div>
+
+      <div className="flex-1 overflow-y-auto px-2 pb-4">
+        {documents.length ? (
+          <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
+            <DocumentTree
+              documents={documents}
+              activeDocumentId={activeDocumentId}
+              expandedDocumentIds={expandedDocumentIds}
+              onToggle={onToggle}
+              onSelect={onSelect}
+              onCreateChild={onCreateChild}
+              onRename={onRename}
+              onDelete={onDelete}
+            />
+          </DndContext>
+        ) : (
+          <div className="px-2 py-6 text-sm text-muted-foreground">暂无文档</div>
+        )}
+      </div>
+    </aside>
+  );
+}

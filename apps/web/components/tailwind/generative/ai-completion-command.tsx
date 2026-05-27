@@ -1,6 +1,7 @@
 import { CommandGroup, CommandItem, CommandSeparator } from "../ui/command";
 import { useEditor } from "novel";
-import { Check, TextQuote, TrashIcon } from "lucide-react";
+import { Check, Clipboard, TextQuote, TrashIcon } from "lucide-react";
+import { toast } from "sonner";
 
 const AICompletionCommands = ({
   completion,
@@ -19,6 +20,7 @@ const AICompletionCommands = ({
           onSelect={() => {
             const selection = editor.view.state.selection;
 
+            // Replace selection：用 AI 结果覆盖当前选中的文本，适合“润色/修正”场景。
             editor
               .chain()
               .focus()
@@ -33,13 +35,14 @@ const AICompletionCommands = ({
           }}
         >
           <Check className="h-4 w-4 text-muted-foreground" />
-          Replace selection
+          替换选区
         </CommandItem>
         <CommandItem
           className="gap-2 px-4"
           value="insert"
           onSelect={() => {
             const selection = editor.view.state.selection;
+            // Insert below：把 AI 结果插入到选区后方，适合“续写/生成补充内容”场景。
             editor
               .chain()
               .focus()
@@ -48,7 +51,18 @@ const AICompletionCommands = ({
           }}
         >
           <TextQuote className="h-4 w-4 text-muted-foreground" />
-          Insert below
+          插入到下方
+        </CommandItem>
+        <CommandItem
+          className="gap-2 px-4"
+          value="copy"
+          onSelect={() => {
+            navigator.clipboard.writeText(completion);
+            toast.success("AI 结果已复制");
+          }}
+        >
+          <Clipboard className="h-4 w-4 text-muted-foreground" />
+          复制结果
         </CommandItem>
       </CommandGroup>
       <CommandSeparator />
@@ -56,7 +70,7 @@ const AICompletionCommands = ({
       <CommandGroup>
         <CommandItem onSelect={onDiscard} value="thrash" className="gap-2 px-4">
           <TrashIcon className="h-4 w-4 text-muted-foreground" />
-          Discard
+          丢弃结果
         </CommandItem>
       </CommandGroup>
     </>
