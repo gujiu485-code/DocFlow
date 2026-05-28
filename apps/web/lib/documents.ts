@@ -15,6 +15,7 @@ export type DocumentItem = {
   sortOrder: number;
   createdAt: string;
   updatedAt: string;
+  deletedAt?: string | null;
   knowledgeStatus?: KnowledgeStatus;
 };
 
@@ -57,16 +58,22 @@ export const createDocumentItem = (
     sortOrder,
     createdAt: now,
     updatedAt: now,
+    deletedAt: null,
     knowledgeStatus: "none",
   };
 };
 
-export const createDraftDocument = (parentId: string | null = null): DraftDocument => ({
+export const createDraftDocument = (
+  parentId: string | null = null,
+  contentJson: any = createEmptyEditorContent(),
+  contentText = "",
+  title = "",
+): DraftDocument => ({
   id: createDocumentId(),
   parentId,
-  title: "",
-  contentJson: createEmptyEditorContent(),
-  contentText: "",
+  title,
+  contentJson,
+  contentText,
 });
 
 export const materializeDraftDocument = (draftDocument: DraftDocument, sortOrder: number): DocumentItem => {
@@ -82,6 +89,7 @@ export const materializeDraftDocument = (draftDocument: DraftDocument, sortOrder
     knowledgeStatus: "none",
     createdAt: now,
     updatedAt: now,
+    deletedAt: null,
   };
 };
 
@@ -123,6 +131,7 @@ const normalizeDocument = (value: Partial<DocumentItem> & Record<string, unknown
     sortOrder: typeof value.sortOrder === "number" ? value.sortOrder : 0,
     createdAt: typeof value.createdAt === "string" ? value.createdAt : now,
     updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : now,
+    deletedAt: typeof value.deletedAt === "string" ? value.deletedAt : null,
     knowledgeStatus:
       value.knowledgeStatus === "pending" ||
       value.knowledgeStatus === "indexed" ||

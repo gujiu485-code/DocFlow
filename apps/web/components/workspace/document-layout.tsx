@@ -3,7 +3,24 @@
 import type { EditorChangePayload } from "@/components/tailwind/advanced-editor";
 import { DocumentEditorPage } from "@/components/workspace/document-editor-page";
 import { DocumentSidebar } from "@/components/workspace/document-sidebar";
+import { DocumentTemplatePicker } from "@/components/workspace/document-template-picker";
+import { DocumentTrashDialog } from "@/components/workspace/document-trash-dialog";
 import { EmptyDocumentState } from "@/components/workspace/empty-document-state";
+import {
+  getDocumentTemplate,
+  getTemplateBodyContent,
+  getTemplateBodyText,
+  getTemplateDraftTitle,
+} from "@/lib/document-templates";
+import {
+  addDocumentVersion,
+  cloneDocumentContent,
+  getDocumentVersions,
+  loadDocumentVersions,
+  removeDocumentVersions,
+  saveDocumentVersions,
+  type DocumentVersion,
+} from "@/lib/document-versions";
 import {
   createDraftDocument,
   getDescendantDocumentIds,
@@ -31,6 +48,11 @@ export function DocumentLayout() {
   const [saveStatus, setSaveStatus] = useState<SaveStatusValue>("saved");
   const [draftDocument, setDraftDocument] = useState<DraftDocument | null>(null);
   const [previousDocumentId, setPreviousDocumentId] = useState<string | null>(null);
+  const [templateParentId, setTemplateParentId] = useState<string | null>(null);
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
+  const [trashOpen, setTrashOpen] = useState(false);
+  const [documentVersions, setDocumentVersions] = useState<DocumentVersion[]>([]);
+  const [editorRevisionByDocumentId, setEditorRevisionByDocumentId] = useState<Record<string, number>>({});
 
   const persistDocuments = useDebouncedCallback((nextDocuments: DocumentItem[]) => {
     try {
@@ -41,17 +63,32 @@ export function DocumentLayout() {
     }
   }, 500);
 
+  const commitDocumentVersions = (updater: (current: DocumentVersion[]) => DocumentVersion[]) => {
+    setDocumentVersions((current) => {
+      const nextVersions = updater(current);
+      saveDocumentVersions(nextVersions);
+      return nextVersions;
+    });
+  };
+
+  const snapshotDocument = (document: DocumentItem | undefined, options?: { force?: boolean }) => {
+    if (!document) return;
+    commitDocumentVersions((current) => addDocumentVersion(current, document, options));
+  };
+
   useEffect(() => {
     const loadedDocuments = loadDocuments();
     const loadedActiveId = loadActiveDocumentId();
     const loadedExpandedIds = loadExpandedDocumentIds();
-    const nextActiveId = loadedDocuments.some((document) => document.id === loadedActiveId)
+    const availableDocuments = loadedDocuments.filter((document) => !document.deletedAt);
+    const nextActiveId = availableDocuments.some((document) => document.id === loadedActiveId)
       ? loadedActiveId
-      : loadedDocuments[0]?.id ?? null;
+      : availableDocuments[0]?.id ?? null;
 
     setDocuments(loadedDocuments);
     setActiveDocumentId(nextActiveId);
     setExpandedDocumentIds(loadedExpandedIds);
+    setDocumentVersions(loadDocumentVersions());
   }, []);
 
   useEffect(() => {
@@ -62,8 +99,10 @@ export function DocumentLayout() {
     saveExpandedDocumentIds(expandedDocumentIds);
   }, [expandedDocumentIds]);
 
-  const visibleDocuments = useMemo(() => documents, [documents]);
-  const activeDocument = documents.find((document) => document.id === activeDocumentId) ?? null;
+  const visibleDocuments = useMemo(() => documents.filter((document) => !document.deletedAt), [documents]);
+  const deletedDocuments = useMemo(() => documents.filter((document) => document.deletedAt), [documents]);
+  const activeDocument = documents.find((document) => document.id === activeDocumentId && !document.deletedAt) ?? null;
+  const activeDocumentVersions = activeDocument ? getDocumentVersions(documentVersions, activeDocument.id) : [];
   const activeDraftDocument = draftDocument;
   const activeDraftDocumentId = activeDraftDocument?.id ?? null;
 
@@ -88,13 +127,16 @@ export function DocumentLayout() {
   const commitDraftDocumentValue = (nextDraftDocument: DraftDocument | null) => {
     // 新建草稿只有在标题和正文都为空时才丢弃；正文有内容时，即使没有标题也要保留。
     if (isDraftDocumentEmpty(nextDraftDocument)) {
-      const fallbackId = previousDocumentId && documents.some((document) => document.id === previousDocumentId) ? previousDocumentId : null;
+      const fallbackId =
+        previousDocumentId && documents.some((document) => document.id === previousDocumentId && !document.deletedAt)
+          ? previousDocumentId
+          : null;
       setDraftDocument(null);
       setActiveDocumentId(fallbackId);
       return null;
     }
 
-    const siblingCount = documents.filter((document) => document.parentId === nextDraftDocument.parentId).length;
+    const siblingCount = documents.filter((document) => document.parentId === nextDraftDocument.parentId && !document.deletedAt).length;
     const nextDocument = materializeDraftDocument(nextDraftDocument, siblingCount);
 
     commitDocuments((current) => [...current, nextDocument], { immediate: true });
@@ -110,14 +152,25 @@ export function DocumentLayout() {
 
   const commitDraftDocument = () => commitDraftDocumentValue(draftDocument);
 
-  const createDocument = (parentId: string | null = null) => {
+  const openTemplatePicker = (parentId: string | null = null) => {
     if (draftDocument && !isDraftDocumentEmpty(draftDocument)) {
       commitDraftDocument();
     }
 
+    setTemplateParentId(parentId);
+    setTemplatePickerOpen(true);
+  };
+
+  const createDocument = (templateId: string) => {
+    const parentId = templateParentId;
+    const template = getDocumentTemplate(templateId);
+
     setPreviousDocumentId(activeDocumentId);
     setActiveDocumentId(null);
-    setDraftDocument(createDraftDocument(parentId));
+    setDraftDocument(
+      createDraftDocument(parentId, getTemplateBodyContent(template), getTemplateBodyText(template), getTemplateDraftTitle(template)),
+    );
+    setTemplatePickerOpen(false);
 
     if (parentId) {
       setExpandedDocumentIds((current) => new Set(current).add(parentId));
@@ -125,6 +178,8 @@ export function DocumentLayout() {
   };
 
   const selectDocument = (documentId: string) => {
+    if (!documents.some((document) => document.id === documentId && !document.deletedAt)) return;
+
     if (draftDocument) {
       if (!isDraftDocumentEmpty(draftDocument)) {
         commitDraftDocument();
@@ -137,9 +192,13 @@ export function DocumentLayout() {
   };
 
   const renameDocument = (documentId: string, title: string) => {
+    snapshotDocument(documents.find((document) => document.id === documentId && !document.deletedAt));
+
     commitDocuments((current) =>
       current.map((document) =>
-        document.id === documentId ? { ...document, title: title.trim() || "Untitled", updatedAt: new Date().toISOString() } : document,
+        document.id === documentId && !document.deletedAt
+          ? { ...document, title: title.trim() || "Untitled", updatedAt: new Date().toISOString() }
+          : document,
       ),
     );
   };
@@ -147,16 +206,59 @@ export function DocumentLayout() {
   const deleteDocument = (documentId: string) => {
     const idsToDelete = new Set([documentId, ...getDescendantDocumentIds(documents, documentId)]);
     const nextActiveDocumentId = idsToDelete.has(activeDocumentId ?? "")
-      ? documents.find((document) => !idsToDelete.has(document.id))?.id ?? null
+      ? documents.find((document) => !document.deletedAt && !idsToDelete.has(document.id))?.id ?? null
       : activeDocumentId;
+    const now = new Date().toISOString();
 
-    commitDocuments((current) => current.filter((document) => !idsToDelete.has(document.id)));
+    commitDocuments(
+      (current) =>
+        current.map((document) =>
+          idsToDelete.has(document.id) ? { ...document, deletedAt: now, updatedAt: now } : document,
+        ),
+      { immediate: true },
+    );
     setActiveDocumentId(nextActiveDocumentId);
     setExpandedDocumentIds((current) => {
       const next = new Set(current);
       for (const id of idsToDelete) next.delete(id);
       return next;
     });
+  };
+
+  const restoreDocument = (documentId: string) => {
+    const idsToRestore = new Set([documentId, ...getDescendantDocumentIds(documents, documentId)]);
+    const now = new Date().toISOString();
+
+    commitDocuments(
+      (current) =>
+        current.map((document) => {
+          if (!idsToRestore.has(document.id)) return document;
+
+          const parentDocument = document.parentId ? current.find((item) => item.id === document.parentId) : null;
+          const parentStillDeleted = parentDocument?.deletedAt && !idsToRestore.has(parentDocument.id);
+
+          return {
+            ...document,
+            parentId: parentStillDeleted ? null : document.parentId,
+            deletedAt: null,
+            updatedAt: now,
+          };
+        }),
+      { immediate: true },
+    );
+    setActiveDocumentId(documentId);
+    setTrashOpen(false);
+  };
+
+  const permanentlyDeleteDocument = (documentId: string) => {
+    const idsToDelete = new Set([documentId, ...getDescendantDocumentIds(documents, documentId)]);
+    const nextActiveDocumentId = idsToDelete.has(activeDocumentId ?? "")
+      ? documents.find((document) => !document.deletedAt && !idsToDelete.has(document.id))?.id ?? null
+      : activeDocumentId;
+
+    commitDocuments((current) => current.filter((document) => !idsToDelete.has(document.id)), { immediate: true });
+    commitDocumentVersions((current) => removeDocumentVersions(current, idsToDelete));
+    setActiveDocumentId(nextActiveDocumentId);
   };
 
   const toggleDocument = (documentId: string) => {
@@ -169,12 +271,12 @@ export function DocumentLayout() {
   };
 
   const reorderDocuments = (activeId: string, overId: string) => {
-    const activeDocument = documents.find((document) => document.id === activeId);
-    const overDocument = documents.find((document) => document.id === overId);
+    const activeDocument = visibleDocuments.find((document) => document.id === activeId);
+    const overDocument = visibleDocuments.find((document) => document.id === overId);
 
     if (!activeDocument || !overDocument || activeDocument.parentId !== overDocument.parentId) return;
 
-    const siblings = getChildDocuments(documents, activeDocument.parentId);
+    const siblings = getChildDocuments(visibleDocuments, activeDocument.parentId);
     const oldIndex = siblings.findIndex((document) => document.id === activeId);
     const newIndex = siblings.findIndex((document) => document.id === overId);
     if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) return;
@@ -210,9 +312,11 @@ export function DocumentLayout() {
       return;
     }
 
+    snapshotDocument(documents.find((document) => document.id === sourceDocumentId && !document.deletedAt));
+
     commitDocuments((current) =>
       current.map((document) =>
-        document.id === sourceDocumentId
+        document.id === sourceDocumentId && !document.deletedAt
           ? {
               ...document,
               contentJson: payload.json,
@@ -225,6 +329,35 @@ export function DocumentLayout() {
     );
   };
 
+  const restoreDocumentVersion = (versionId: string) => {
+    const version = documentVersions.find((item) => item.id === versionId);
+    if (!version) return;
+
+    snapshotDocument(documents.find((document) => document.id === version.documentId && !document.deletedAt), { force: true });
+
+    commitDocuments(
+      (current) =>
+        current.map((document) =>
+          document.id === version.documentId && !document.deletedAt
+            ? {
+                ...document,
+                title: version.title,
+                contentJson: cloneDocumentContent(version.contentJson),
+                contentText: version.contentText,
+                updatedAt: new Date().toISOString(),
+                knowledgeStatus: document.knowledgeStatus === "indexed" ? "outdated" : document.knowledgeStatus ?? "none",
+              }
+            : document,
+        ),
+      { immediate: true },
+    );
+    setEditorRevisionByDocumentId((current) => ({
+      ...current,
+      [version.documentId]: (current[version.documentId] ?? 0) + 1,
+    }));
+    setActiveDocumentId(version.documentId);
+  };
+
   const updateDraftTitle = (title: string) => {
     setDraftDocument((current) => (current ? { ...current, title } : current));
   };
@@ -235,13 +368,15 @@ export function DocumentLayout() {
         documents={visibleDocuments}
         activeDocumentId={activeDocumentId}
         expandedDocumentIds={expandedDocumentIds}
-        onCreateRoot={() => createDocument(null)}
-        onCreateChild={createDocument}
+        onCreateRoot={() => openTemplatePicker(null)}
+        onCreateChild={openTemplatePicker}
         onToggle={toggleDocument}
         onSelect={selectDocument}
         onRename={renameDocument}
         onDelete={deleteDocument}
         onReorder={reorderDocuments}
+        deletedCount={deletedDocuments.length}
+        onOpenTrash={() => setTrashOpen(true)}
       />
 
       {activeDraftDocument ? (
@@ -259,12 +394,23 @@ export function DocumentLayout() {
           saveStatus={saveStatus}
           onTitleChange={(title) => renameDocument(activeDocument.id, title)}
           onContentChange={updateDocumentContent}
+          versions={activeDocumentVersions}
+          onRestoreVersion={restoreDocumentVersion}
+          editorKey={String(editorRevisionByDocumentId[activeDocument.id] ?? 0)}
         />
       ) : (
         <main className="h-screen min-w-0 flex-1">
-          <EmptyDocumentState onCreateDocument={() => createDocument(null)} />
+          <EmptyDocumentState onCreateDocument={() => openTemplatePicker(null)} />
         </main>
       )}
+      <DocumentTemplatePicker open={templatePickerOpen} onOpenChange={setTemplatePickerOpen} onSelect={createDocument} />
+      <DocumentTrashDialog
+        open={trashOpen}
+        documents={deletedDocuments}
+        onOpenChange={setTrashOpen}
+        onRestore={restoreDocument}
+        onPermanentlyDelete={permanentlyDeleteDocument}
+      />
     </div>
   );
 }

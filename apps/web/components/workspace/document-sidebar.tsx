@@ -3,7 +3,7 @@ import { DocumentSearchPanel } from "@/components/workspace/document-search-pane
 import { DocumentTree } from "@/components/workspace/document-tree";
 import type { DocumentItem } from "@/lib/documents";
 import { closestCenter, DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
-import { Plus } from "lucide-react";
+import { Plus, Trash2 } from "lucide-react";
 
 interface DocumentSidebarProps {
   documents: DocumentItem[];
@@ -16,6 +16,8 @@ interface DocumentSidebarProps {
   onRename: (documentId: string, title: string) => void;
   onDelete: (documentId: string) => void;
   onReorder: (activeId: string, overId: string) => void;
+  deletedCount: number;
+  onOpenTrash: () => void;
 }
 
 export function DocumentSidebar({
@@ -29,6 +31,8 @@ export function DocumentSidebar({
   onRename,
   onDelete,
   onReorder,
+  deletedCount,
+  onOpenTrash,
 }: DocumentSidebarProps) {
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -56,6 +60,10 @@ export function DocumentSidebar({
         <Button variant="ghost" className="h-8 w-full justify-start gap-2 px-2 text-muted-foreground" onClick={onCreateRoot}>
           <Plus className="h-4 w-4" />
           新建页面
+        </Button>
+        <Button variant="ghost" className="h-8 w-full justify-start gap-2 px-2 text-muted-foreground" onClick={onOpenTrash}>
+          <Trash2 className="h-4 w-4" />
+          垃圾桶{deletedCount ? ` (${deletedCount})` : ""}
         </Button>
         <div className="mt-2">
           <DocumentSearchPanel documents={documents} activeDocumentId={activeDocumentId} onSelect={onSelect} />

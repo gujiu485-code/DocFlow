@@ -1,5 +1,6 @@
 "use client";
 import { defaultEditorContent } from "@/lib/content";
+import { cn } from "@/lib/utils";
 // 这些是novel已经封装好的功能直接用就可以了
 import {
   EditorCommand,
@@ -17,7 +18,7 @@ import {
 } from "novel";
 
 
-import { useEffect, useState } from "react"; 
+import { useEffect, useRef, useState } from "react"; 
 // React Hooks：useState 用来管理组件状态，useEffect 用来处理组件加载后的副作用逻辑
 
 import { useDebouncedCallback } from "use-debounce"; 
@@ -72,26 +73,41 @@ export interface EditorChangePayload {
 
 interface TailwindAdvancedEditorProps {
   documentId?: string;
+  editorKey?: string;
   content?: JSONContent;
   onChange?: (payload: EditorChangePayload) => void;
   showMeta?: boolean;
   syncUpdates?: boolean;
+  appearance?: "default" | "document";
 }
 
 const TailwindAdvancedEditor = ({
   documentId = "default",
+  editorKey = "base",
   content,
   onChange,
   showMeta = true,
   syncUpdates = false,
+  appearance = "default",
 }: TailwindAdvancedEditorProps) => {
   // initialContent 是编辑器的初始文档结构。Tiptap 推荐用 JSON 保存正文，
   // 因为它能保留 heading、image、taskList 等节点语义，后续做版本、导出、AI 分析都更方便。
   
-// 编辑器初始内容：
-// 初始为 null，等页面加载时从 localStorage 或后端接口读取内容后再赋值。
-// 类型 JSONContent 是 Tiptap 的文档 JSON 结构。
-const [initialContent, setInitialContent] = useState<null | JSONContent>(null);
+const editorInstanceKey = `${documentId}-${editorKey}`;
+const initialContentRef = useRef<{ key: string; value: JSONContent }>({
+  key: editorInstanceKey,
+  value: cloneEditorContent(content ?? defaultEditorContent),
+});
+
+// 切换文档时必须在本次渲染里同步换成新内容，避免 EditorContent 先用上一篇文档内容挂载。
+if (initialContentRef.current.key !== editorInstanceKey) {
+  initialContentRef.current = {
+    key: editorInstanceKey,
+    value: cloneEditorContent(content ?? defaultEditorContent),
+  };
+}
+
+const initialContent = initialContentRef.current.value;
 
 // 保存状态：
 // 用于显示当前文档是否已保存，比如已保存、未保存、保存中、保存失败。
@@ -154,13 +170,9 @@ const [openAI, setOpenAI] = useState(false);
   }, 500);
 
   useEffect(() => {
-    // documentId 变化时重新装载当前文档内容，适配文档列表切换。
-    setInitialContent(cloneEditorContent(content ?? defaultEditorContent));
     setSaveStatus("已保存");
     setCharsCount(undefined);
-  }, [documentId]);
-
-  if (!initialContent) return null;
+  }, [editorInstanceKey]);
 
   return (
     <div className="relative w-full max-w-screen-lg">
@@ -175,11 +187,16 @@ const [openAI, setOpenAI] = useState(false);
       <EditorRoot>
         {/* EditorRoot 提供编辑器上下文，EditorContent 是真正挂载 Tiptap 编辑器的地方。 */}
         <EditorContent
-          key={documentId}
+          key={`${documentId}-${editorKey}`}
           initialContent={initialContent}
           // extensions 决定编辑器支持哪些能力，例如标题、列表、图片、AI 高亮、Markdown、斜杠菜单。
           extensions={extensions}
-          className="relative min-h-[500px] w-full max-w-screen-lg border-muted bg-background sm:mb-[calc(20vh)] sm:rounded-lg sm:border sm:shadow-lg"
+          className={cn(
+            "relative w-full max-w-screen-lg bg-background",
+            appearance === "document"
+              ? "min-h-[520px]"
+              : "min-h-[500px] border-muted sm:mb-[calc(20vh)] sm:rounded-lg sm:border sm:shadow-lg",
+          )}
           editorProps={{
             handleDOMEvents: {
               // 把键盘事件交给命令菜单处理，保证 / 菜单可以用上下键和回车选择。
@@ -189,8 +206,11 @@ const [openAI, setOpenAI] = useState(false);
             handlePaste: (view, event) => handleImagePaste(view, event, uploadFn),
             handleDrop: (view, event, _slice, moved) => handleImageDrop(view, event, moved, uploadFn),
             attributes: {
-              class:
+              class: cn(
                 "prose prose-lg dark:prose-invert prose-headings:font-title font-default focus:outline-none max-w-full",
+                appearance === "document" &&
+                  "docflow-document-editor min-h-[520px] !p-0 prose-p:my-2 prose-headings:mb-2 prose-headings:mt-7",
+              ),
             },
           }}
           onUpdate={({ editor }) => {

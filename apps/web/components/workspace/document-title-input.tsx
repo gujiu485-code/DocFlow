@@ -1,3 +1,4 @@
+import { cn } from "@/lib/utils";
 import { useEffect, useRef, useState } from "react";
 
 interface DocumentTitleInputProps {
@@ -6,6 +7,8 @@ interface DocumentTitleInputProps {
   autoFocus?: boolean;
   commitEmptyTitle?: boolean;
   onDraftChange?: (title: string) => void;
+  className?: string;
+  placeholder?: string;
 }
 
 export function DocumentTitleInput({
@@ -14,6 +17,8 @@ export function DocumentTitleInput({
   autoFocus = false,
   commitEmptyTitle = true,
   onDraftChange,
+  className,
+  placeholder = "Untitled",
 }: DocumentTitleInputProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [draftTitle, setDraftTitle] = useState(title);
@@ -48,8 +53,11 @@ export function DocumentTitleInput({
           event.currentTarget.blur();
         }
       }}
-      className="w-full bg-transparent text-3xl font-semibold outline-none placeholder:text-muted-foreground"
-      placeholder="Untitled"
+      className={cn(
+        "w-full bg-transparent text-3xl font-semibold outline-none placeholder:text-muted-foreground",
+        className,
+      )}
+      placeholder={placeholder}
     />
   );
 }
