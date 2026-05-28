@@ -13,6 +13,7 @@ import {
   Twitter,
   Youtube,
 } from "lucide-react";
+import { PluginKey } from "@tiptap/pm/state";
 import { Command, createSuggestionItems, renderItems } from "novel";
 import { uploadFn } from "./image-upload";
 
@@ -186,9 +187,16 @@ export const suggestionItems = createSuggestionItems([
 
 // slashCommand 把上面的候选项注册进 Tiptap/Novel 的 Command 扩展。
 // renderItems 负责把候选项渲染成弹层列表，键盘导航在 advanced-editor.tsx 里处理。
-export const slashCommand = Command.configure({
-  suggestion: {
-    items: () => suggestionItems,
-    render: renderItems,
-  },
-});
+const createSlashCommand = (name: string, char: string, pluginKey: string) =>
+  Command.extend({ name }).configure({
+    suggestion: {
+      char,
+      pluginKey: new PluginKey(pluginKey),
+      items: () => suggestionItems,
+      render: renderItems,
+    },
+  });
+
+export const slashCommand = createSlashCommand("slash-command", "/", "slashCommand");
+export const fullWidthSlashCommand = createSlashCommand("fullwidth-slash-command", "／", "fullWidthSlashCommand");
+export const chineseSlashCommand = createSlashCommand("chinese-slash-command", "、", "chineseSlashCommand");

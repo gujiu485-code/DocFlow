@@ -23,33 +23,10 @@ import { useDebouncedCallback } from "use-debounce";
 import { useEffect, useMemo, useState } from "react";
 import { arrayMove } from "@dnd-kit/sortable";
 
-const filterDocumentTree = (documents: DocumentItem[], query: string) => {
-  const keyword = query.trim().toLowerCase();
-  if (!keyword) return documents;
-
-  const matchedIds = new Set<string>();
-  for (const document of documents) {
-    const matched =
-      document.title.toLowerCase().includes(keyword) || (document.contentText ?? "").toLowerCase().includes(keyword);
-
-    if (matched) {
-      matchedIds.add(document.id);
-      let parentId = document.parentId;
-      while (parentId) {
-        matchedIds.add(parentId);
-        parentId = documents.find((item) => item.id === parentId)?.parentId ?? null;
-      }
-    }
-  }
-
-  return documents.filter((document) => matchedIds.has(document.id));
-};
-
 export function DocumentLayout() {
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
   const [expandedDocumentIds, setExpandedDocumentIds] = useState<Set<string>>(new Set());
-  const [query, setQuery] = useState("");
   const [saveStatus, setSaveStatus] = useState<SaveStatusValue>("saved");
   const [draftDocument, setDraftDocument] = useState<DraftDocument | null>(null);
   const [previousDocumentId, setPreviousDocumentId] = useState<string | null>(null);
@@ -84,7 +61,7 @@ export function DocumentLayout() {
     saveExpandedDocumentIds(expandedDocumentIds);
   }, [expandedDocumentIds]);
 
-  const visibleDocuments = useMemo(() => filterDocumentTree(documents, query), [documents, query]);
+  const visibleDocuments = useMemo(() => documents, [documents]);
   const activeDocument = documents.find((document) => document.id === activeDocumentId) ?? null;
   const activeDraftDocument = draftDocument;
 
@@ -249,8 +226,6 @@ export function DocumentLayout() {
         documents={visibleDocuments}
         activeDocumentId={activeDocumentId}
         expandedDocumentIds={expandedDocumentIds}
-        query={query}
-        onQueryChange={setQuery}
         onCreateRoot={() => createDocument(null)}
         onCreateChild={createDocument}
         onToggle={toggleDocument}

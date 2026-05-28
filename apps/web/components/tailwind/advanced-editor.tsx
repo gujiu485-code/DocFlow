@@ -50,14 +50,14 @@ import { uploadFn } from "./image-upload";
 import { TextButtons } from "./selectors/text-buttons";
 // 文本样式按钮组件：用于加粗、斜体、下划线、删除线、代码等文字格式操作
 
-import { slashCommand, suggestionItems } from "./slash-command";
+import { chineseSlashCommand, fullWidthSlashCommand, slashCommand, suggestionItems } from "./slash-command";
 // slashCommand：斜杠菜单扩展，用来监听用户输入 "/" 并触发命令菜单
 // suggestionItems：斜杠菜单里的命令列表，比如标题、列表、图片、代码块等
 
 const hljs = require("highlight.js");
 // 代码语法高亮库
 
-const extensions = [...defaultExtensions, slashCommand];
+const extensions = [...defaultExtensions, slashCommand, fullWidthSlashCommand, chineseSlashCommand];
 // 把默认编辑器能力和 Slash 命令能力合并成一个 extensions 数组，然后传给编辑器使用。
 
 export interface EditorChangePayload {

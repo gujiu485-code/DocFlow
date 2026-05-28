@@ -31,8 +31,14 @@ import { common, createLowlight } from "lowlight";
 // extensions 是 Tiptap 的能力开关：编辑器支持什么节点、快捷键、插件，基本都在这里集中注册。
 const aiHighlight = AIHighlight;
 
-// Placeholder 控制空段落里的提示文案，企业项目里可以改成“输入 / 插入内容”之类的提示。
-const placeholder = Placeholder;
+// Placeholder 控制空段落里的提示文案，覆盖 Novel 默认的英文 “Press '/' for commands”。
+const placeholder = Placeholder.configure({
+  placeholder: ({ node }) => {
+    if (node.type.name === "heading") return `标题 ${node.attrs.level}`;
+    return "输入 / 打开命令菜单";
+  },
+  includeChildren: true,
+});
 
 // 链接扩展：配置渲染到页面时的 class，不影响文档 JSON 的结构。
 const tiptapLink = TiptapLink.configure({

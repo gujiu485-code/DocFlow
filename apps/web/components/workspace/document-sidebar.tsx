@@ -1,15 +1,14 @@
 import { Button } from "@/components/tailwind/ui/button";
+import { DocumentSearchPanel } from "@/components/workspace/document-search-panel";
 import { DocumentTree } from "@/components/workspace/document-tree";
 import type { DocumentItem } from "@/lib/documents";
 import { closestCenter, DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
-import { Plus, Search } from "lucide-react";
+import { Plus } from "lucide-react";
 
 interface DocumentSidebarProps {
   documents: DocumentItem[];
   activeDocumentId: string | null;
   expandedDocumentIds: Set<string>;
-  query: string;
-  onQueryChange: (query: string) => void;
   onCreateRoot: () => void;
   onCreateChild: (parentId: string) => void;
   onToggle: (documentId: string) => void;
@@ -23,8 +22,6 @@ export function DocumentSidebar({
   documents,
   activeDocumentId,
   expandedDocumentIds,
-  query,
-  onQueryChange,
   onCreateRoot,
   onCreateChild,
   onToggle,
@@ -58,16 +55,10 @@ export function DocumentSidebar({
       <div className="px-3 pb-3">
         <Button variant="ghost" className="h-8 w-full justify-start gap-2 px-2 text-muted-foreground" onClick={onCreateRoot}>
           <Plus className="h-4 w-4" />
-          新建文档
+          新建页面
         </Button>
-        <div className="mt-2 flex h-8 items-center gap-2 rounded-md bg-muted/70 px-2">
-          <Search className="h-4 w-4 text-muted-foreground" />
-          <input
-            value={query}
-            onChange={(event) => onQueryChange(event.target.value)}
-            className="min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground"
-            placeholder="搜索文档"
-          />
+        <div className="mt-2">
+          <DocumentSearchPanel documents={documents} activeDocumentId={activeDocumentId} onSelect={onSelect} />
         </div>
       </div>
 

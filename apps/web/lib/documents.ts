@@ -9,6 +9,8 @@ export type DocumentItem = {
   title: string;
   contentJson: any;
   contentText?: string;
+  tags?: string[];
+  summary?: string;
   parentId: string | null;
   sortOrder: number;
   createdAt: string;
@@ -48,6 +50,8 @@ export const createDocumentItem = (
     title,
     contentJson,
     contentText: "",
+    tags: [],
+    summary: "",
     parentId,
     sortOrder,
     createdAt: now,
@@ -108,6 +112,8 @@ const normalizeDocument = (value: Partial<DocumentItem> & Record<string, unknown
     title: typeof value.title === "string" ? value.title : "Untitled",
     contentJson: value.contentJson ?? value.content ?? emptyEditorContent,
     contentText: typeof value.contentText === "string" ? value.contentText : typeof value.markdown === "string" ? value.markdown : "",
+    tags: Array.isArray(value.tags) ? value.tags.filter((tag): tag is string => typeof tag === "string") : [],
+    summary: typeof value.summary === "string" ? value.summary : "",
     parentId: typeof value.parentId === "string" ? value.parentId : null,
     sortOrder: typeof value.sortOrder === "number" ? value.sortOrder : 0,
     createdAt: typeof value.createdAt === "string" ? value.createdAt : now,
