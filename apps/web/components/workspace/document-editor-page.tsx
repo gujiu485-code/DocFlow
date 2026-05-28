@@ -9,7 +9,7 @@ interface DocumentEditorPageProps {
   document: DocumentItem | DraftDocument;
   saveStatus: SaveStatusValue;
   onTitleChange: (title: string) => void;
-  onContentChange: (payload: EditorChangePayload) => void;
+  onContentChange: (documentId: string, payload: EditorChangePayload) => void;
   isDraft?: boolean;
   onBack?: () => void;
 }
@@ -22,7 +22,7 @@ export function DocumentEditorPage({
   isDraft = false,
   onBack,
 }: DocumentEditorPageProps) {
-  const documentId = "id" in document ? document.id : `draft-${document.parentId ?? "root"}`;
+  const documentId = document.id;
 
   return (
     <main className="relative h-screen min-w-0 flex-1 overflow-y-auto bg-background">
@@ -49,7 +49,8 @@ export function DocumentEditorPage({
             documentId={documentId}
             content={"contentJson" in document ? document.contentJson : undefined}
             showMeta={false}
-            onChange={onContentChange}
+            syncUpdates={isDraft}
+            onChange={(payload) => onContentChange(documentId, payload)}
           />
         </div>
       </div>

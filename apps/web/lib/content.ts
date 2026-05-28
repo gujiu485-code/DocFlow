@@ -118,3 +118,12 @@ export const emptyEditorContent = {
     },
   ],
 };
+
+export const createEmptyEditorContent = () => ({
+  type: "doc",
+  content: [
+    {
+      type: "paragraph",
+    },
+  ],
+});

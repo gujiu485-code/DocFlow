@@ -50,20 +50,23 @@ import { uploadFn } from "./image-upload";
 import { TextButtons } from "./selectors/text-buttons";
 // 文本样式按钮组件：用于加粗、斜体、下划线、删除线、代码等文字格式操作
 
-import { chineseSlashCommand, fullWidthSlashCommand, slashCommand, suggestionItems } from "./slash-command";
+import { slashCommand, suggestionItems } from "./slash-command";
 // slashCommand：斜杠菜单扩展，用来监听用户输入 "/" 并触发命令菜单
 // suggestionItems：斜杠菜单里的命令列表，比如标题、列表、图片、代码块等
 
 const hljs = require("highlight.js");
 // 代码语法高亮库
 
-const extensions = [...defaultExtensions, slashCommand, fullWidthSlashCommand, chineseSlashCommand];
+const extensions = [...defaultExtensions, slashCommand];
 // 把默认编辑器能力和 Slash 命令能力合并成一个 extensions 数组，然后传给编辑器使用。
+
+const cloneEditorContent = (value: JSONContent) => JSON.parse(JSON.stringify(value)) as JSONContent;
 
 export interface EditorChangePayload {
   json: JSONContent;
   html: string;
   markdown: string;
+  text: string;
   words: number;
 }
 
@@ -72,9 +75,16 @@ interface TailwindAdvancedEditorProps {
   content?: JSONContent;
   onChange?: (payload: EditorChangePayload) => void;
   showMeta?: boolean;
+  syncUpdates?: boolean;
 }
 
-const TailwindAdvancedEditor = ({ documentId = "default", content, onChange, showMeta = true }: TailwindAdvancedEditorProps) => {
+const TailwindAdvancedEditor = ({
+  documentId = "default",
+  content,
+  onChange,
+  showMeta = true,
+  syncUpdates = false,
+}: TailwindAdvancedEditorProps) => {
   // initialContent 是编辑器的初始文档结构。Tiptap 推荐用 JSON 保存正文，
   // 因为它能保留 heading、image、taskList 等节点语义，后续做版本、导出、AI 分析都更方便。
   
@@ -126,21 +136,26 @@ const [openAI, setOpenAI] = useState(false);
   // 用户停止输入 500ms 后再保存，避免每敲一个字都写 localStorage 或请求后端。
   // 用户编辑内容后，延迟 500ms 自动保存编辑器内容，
   // 并同时导出 JSON、HTML、Markdown 三种格式到 localStorage。
-  const debouncedUpdates = useDebouncedCallback(async (editor: EditorInstance) => {
+  const emitEditorChange = (editor: EditorInstance) => {
     const json = editor.getJSON();
     const words = editor.storage.characterCount.words();
     const html = highlightCodeblocks(editor.getHTML());
     const markdown = editor.storage.markdown.getMarkdown();
+    const text = editor.getText();
     setCharsCount(words);
     // 同一份编辑器内容导出三种格式：
     // JSON 作为主存储，HTML 用于预览/发布，Markdown 用于导出或发给 AI 处理。
-    onChange?.({ json, html, markdown, words });
+    onChange?.({ json, html, markdown, text, words });
     setSaveStatus("已保存");
+  };
+
+  const debouncedUpdates = useDebouncedCallback(async (editor: EditorInstance) => {
+    emitEditorChange(editor);
   }, 500);
 
   useEffect(() => {
     // documentId 变化时重新装载当前文档内容，适配文档列表切换。
-    setInitialContent(content ?? defaultEditorContent);
+    setInitialContent(cloneEditorContent(content ?? defaultEditorContent));
     setSaveStatus("已保存");
     setCharsCount(undefined);
   }, [documentId]);
@@ -180,13 +195,17 @@ const [openAI, setOpenAI] = useState(false);
           }}
           onUpdate={({ editor }) => {
             // 内容变化后先标记为未保存，再交给防抖函数异步持久化。
-            debouncedUpdates(editor);
+            if (syncUpdates) {
+              emitEditorChange(editor);
+            } else {
+              debouncedUpdates(editor);
+            }
             setSaveStatus("未保存");
           }}
           slotAfter={<ImageResizer />}
         >
           {/* EditorCommand 是输入 / 后弹出的 Notion 风格命令菜单。 */}
-          <EditorCommand className="z-50 h-auto max-h-[330px] overflow-y-auto rounded-md border border-muted bg-background px-1 py-2 shadow-md transition-all">
+          <EditorCommand className="z-50 h-auto max-h-[330px] overflow-y-auto rounded-md border border-muted bg-background px-1 py-2 shadow-md transition-all [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             <EditorCommandEmpty className="px-2 text-muted-foreground">没有找到相关命令</EditorCommandEmpty>
             <EditorCommandList>
               {suggestionItems.map((item) => (

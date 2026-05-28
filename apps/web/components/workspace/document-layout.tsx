@@ -11,6 +11,7 @@ import {
   loadActiveDocumentId,
   loadDocuments,
   loadExpandedDocumentIds,
+  isDraftDocumentEmpty,
   saveActiveDocumentId,
   saveDocuments,
   saveExpandedDocumentIds,
@@ -64,18 +65,29 @@ export function DocumentLayout() {
   const visibleDocuments = useMemo(() => documents, [documents]);
   const activeDocument = documents.find((document) => document.id === activeDocumentId) ?? null;
   const activeDraftDocument = draftDocument;
+  const activeDraftDocumentId = activeDraftDocument?.id ?? null;
 
-  const commitDocuments = (updater: (current: DocumentItem[]) => DocumentItem[]) => {
+  const commitDocuments = (updater: (current: DocumentItem[]) => DocumentItem[], options?: { immediate?: boolean }) => {
     setDocuments((current) => {
       const nextDocuments = updater(current);
       setSaveStatus("saving");
-      persistDocuments(nextDocuments);
+      if (options?.immediate) {
+        try {
+          saveDocuments(nextDocuments);
+          setSaveStatus("saved");
+        } catch {
+          setSaveStatus("error");
+        }
+      } else {
+        persistDocuments(nextDocuments);
+      }
       return nextDocuments;
     });
   };
 
   const commitDraftDocumentValue = (nextDraftDocument: DraftDocument | null) => {
-    if (!nextDraftDocument || !nextDraftDocument.title.trim()) {
+    // 新建草稿只有在标题和正文都为空时才丢弃；正文有内容时，即使没有标题也要保留。
+    if (isDraftDocumentEmpty(nextDraftDocument)) {
       const fallbackId = previousDocumentId && documents.some((document) => document.id === previousDocumentId) ? previousDocumentId : null;
       setDraftDocument(null);
       setActiveDocumentId(fallbackId);
@@ -85,7 +97,7 @@ export function DocumentLayout() {
     const siblingCount = documents.filter((document) => document.parentId === nextDraftDocument.parentId).length;
     const nextDocument = materializeDraftDocument(nextDraftDocument, siblingCount);
 
-    commitDocuments((current) => [...current, nextDocument]);
+    commitDocuments((current) => [...current, nextDocument], { immediate: true });
     setDraftDocument(null);
     setActiveDocumentId(nextDocument.id);
 
@@ -99,7 +111,7 @@ export function DocumentLayout() {
   const commitDraftDocument = () => commitDraftDocumentValue(draftDocument);
 
   const createDocument = (parentId: string | null = null) => {
-    if (draftDocument?.title.trim()) {
+    if (draftDocument && !isDraftDocumentEmpty(draftDocument)) {
       commitDraftDocument();
     }
 
@@ -114,7 +126,7 @@ export function DocumentLayout() {
 
   const selectDocument = (documentId: string) => {
     if (draftDocument) {
-      if (draftDocument.title.trim()) {
+      if (!isDraftDocumentEmpty(draftDocument)) {
         commitDraftDocument();
       } else {
         setDraftDocument(null);
@@ -183,31 +195,28 @@ export function DocumentLayout() {
     );
   };
 
-  const updateActiveContent = (payload: EditorChangePayload) => {
-    if (draftDocument) {
-      const nextDraftDocument = {
-        ...draftDocument,
-        contentJson: payload.json,
-        contentText: payload.markdown,
-      };
-
-      if (nextDraftDocument.title.trim()) {
-        commitDraftDocumentValue(nextDraftDocument);
-      } else {
-        setDraftDocument(nextDraftDocument);
-      }
+  const updateDocumentContent = (sourceDocumentId: string, payload: EditorChangePayload) => {
+    // 内容更新必须按来源 documentId 写入，避免切换页面或防抖回调把内容写到当前选中文档。
+    if (sourceDocumentId === activeDraftDocumentId) {
+      setDraftDocument((current) =>
+        current && sourceDocumentId === current.id
+          ? {
+              ...current,
+              contentJson: payload.json,
+              contentText: payload.text,
+            }
+          : current,
+      );
       return;
     }
 
-    if (!activeDocumentId) return;
-
     commitDocuments((current) =>
       current.map((document) =>
-        document.id === activeDocumentId
+        document.id === sourceDocumentId
           ? {
               ...document,
               contentJson: payload.json,
-              contentText: payload.markdown,
+              contentText: payload.text,
               updatedAt: new Date().toISOString(),
               knowledgeStatus: document.knowledgeStatus === "indexed" ? "outdated" : document.knowledgeStatus ?? "none",
             }
@@ -242,14 +251,14 @@ export function DocumentLayout() {
           isDraft
           onBack={commitDraftDocument}
           onTitleChange={updateDraftTitle}
-          onContentChange={updateActiveContent}
+          onContentChange={updateDocumentContent}
         />
       ) : activeDocument ? (
         <DocumentEditorPage
           document={activeDocument}
           saveStatus={saveStatus}
           onTitleChange={(title) => renameDocument(activeDocument.id, title)}
-          onContentChange={updateActiveContent}
+          onContentChange={updateDocumentContent}
         />
       ) : (
         <main className="h-screen min-w-0 flex-1">

@@ -1,4 +1,4 @@
-import { defaultEditorContent, emptyEditorContent } from "@/lib/content";
+import { createEmptyEditorContent, defaultEditorContent } from "@/lib/content";
 
 export type KnowledgeStatus = "none" | "pending" | "indexed" | "failed" | "outdated";
 
@@ -19,6 +19,7 @@ export type DocumentItem = {
 };
 
 export type DraftDocument = {
+  id: string;
   parentId: string | null;
   title: string;
   contentJson: any;
@@ -41,7 +42,7 @@ export const createDocumentItem = (
   parentId: string | null = null,
   title = "Untitled",
   sortOrder = 0,
-  contentJson: any = emptyEditorContent,
+  contentJson: any = createEmptyEditorContent(),
 ): DocumentItem => {
   const now = new Date().toISOString();
 
@@ -61,9 +62,10 @@ export const createDocumentItem = (
 };
 
 export const createDraftDocument = (parentId: string | null = null): DraftDocument => ({
+  id: createDocumentId(),
   parentId,
   title: "",
-  contentJson: emptyEditorContent,
+  contentJson: createEmptyEditorContent(),
   contentText: "",
 });
 
@@ -71,7 +73,7 @@ export const materializeDraftDocument = (draftDocument: DraftDocument, sortOrder
   const now = new Date().toISOString();
 
   return {
-    id: createDocumentId(),
+    id: draftDocument.id,
     title: draftDocument.title.trim(),
     parentId: draftDocument.parentId,
     contentJson: draftDocument.contentJson,
@@ -82,6 +84,9 @@ export const materializeDraftDocument = (draftDocument: DraftDocument, sortOrder
     updatedAt: now,
   };
 };
+
+export const isDraftDocumentEmpty = (draftDocument: DraftDocument | null) =>
+  !draftDocument || (!draftDocument.title.trim() && !draftDocument.contentText.trim());
 
 export const createDefaultDocuments = (): DocumentItem[] => {
   const root = createDocumentItem(null, "企业知识库示例文档", 0, defaultEditorContent);
@@ -110,7 +115,7 @@ const normalizeDocument = (value: Partial<DocumentItem> & Record<string, unknown
   return {
     id: typeof value.id === "string" ? value.id : createDocumentId(),
     title: typeof value.title === "string" ? value.title : "Untitled",
-    contentJson: value.contentJson ?? value.content ?? emptyEditorContent,
+    contentJson: value.contentJson ?? value.content ?? createEmptyEditorContent(),
     contentText: typeof value.contentText === "string" ? value.contentText : typeof value.markdown === "string" ? value.markdown : "",
     tags: Array.isArray(value.tags) ? value.tags.filter((tag): tag is string => typeof tag === "string") : [],
     summary: typeof value.summary === "string" ? value.summary : "",
