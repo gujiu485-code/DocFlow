@@ -6,7 +6,7 @@ import { DocumentStatusSelect } from "@/components/workspace/document-status-sel
 import { DocumentTagInput } from "@/components/workspace/document-tag-input";
 import { KnowledgeStatusBadge } from "@/components/workspace/knowledge-status-badge";
 import type { DocumentItem, DocumentMetaUpdate } from "@/lib/documents";
-import { DatabaseZap, FileSliders, Sparkles, TriangleAlert } from "lucide-react";
+import { DatabaseZap, FileSliders, ListChecks, Sparkles, TriangleAlert } from "lucide-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
 
@@ -15,6 +15,7 @@ interface DocumentPropertiesPanelProps {
   wordCount: number;
   onChange?: (updates: DocumentMetaUpdate) => void;
   onSyncKnowledge?: () => void;
+  onOpenSyncCenter?: () => void;
   onGenerateMetadata?: () => Promise<void>;
 }
 
@@ -23,6 +24,7 @@ export function DocumentPropertiesPanel({
   wordCount,
   onChange,
   onSyncKnowledge,
+  onOpenSyncCenter,
   onGenerateMetadata,
 }: DocumentPropertiesPanelProps) {
   const [generatingMetadata, setGeneratingMetadata] = useState(false);
@@ -111,12 +113,18 @@ export function DocumentPropertiesPanel({
             variant="outline"
             size="sm"
             className="mt-3 h-8 w-full gap-2"
-            disabled={knowledgeStatus === "pending"}
+            disabled={knowledgeStatus === "pending" || !onSyncKnowledge}
             onClick={onSyncKnowledge}
           >
             <DatabaseZap className="h-3.5 w-3.5" />
             {knowledgeStatus === "pending" ? "同步中..." : "同步到知识库"}
           </Button>
+          {onOpenSyncCenter && (
+            <Button variant="ghost" size="sm" className="mt-2 h-8 w-full gap-2" onClick={onOpenSyncCenter}>
+              <ListChecks className="h-3.5 w-3.5" />
+              查看任务中心
+            </Button>
+          )}
         </div>
       </section>
 

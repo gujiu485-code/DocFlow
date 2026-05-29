@@ -19,6 +19,7 @@ interface DocumentEditorPageProps {
   onRestoreVersion?: (versionId: string) => void;
   onMetaChange?: (documentId: string, updates: DocumentMetaUpdate) => void;
   onSyncKnowledge?: (documentId: string) => void;
+  onOpenSyncCenter?: () => void;
   onGenerateMetadata?: (documentId: string) => Promise<void>;
   editorKey?: string;
 }
@@ -34,6 +35,7 @@ export function DocumentEditorPage({
   onRestoreVersion,
   onMetaChange,
   onSyncKnowledge,
+  onOpenSyncCenter,
   onGenerateMetadata,
   editorKey,
 }: DocumentEditorPageProps) {
@@ -94,6 +96,7 @@ export function DocumentEditorPage({
         wordCount={wordCount}
         onMetaChange={onMetaChange ? (updates) => onMetaChange(documentId, updates) : undefined}
         onSyncKnowledge={onSyncKnowledge ? () => onSyncKnowledge(documentId) : undefined}
+        onOpenSyncCenter={onOpenSyncCenter}
         onGenerateMetadata={onGenerateMetadata ? () => onGenerateMetadata(documentId) : undefined}
       />
     </main>

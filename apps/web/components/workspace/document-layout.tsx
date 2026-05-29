@@ -5,7 +5,8 @@ import { DocumentEditorPage } from "@/components/workspace/document-editor-page"
 import { DocumentSidebar } from "@/components/workspace/document-sidebar";
 import { DocumentTemplatePicker } from "@/components/workspace/document-template-picker";
 import { DocumentTrashDialog } from "@/components/workspace/document-trash-dialog";
-import { EmptyDocumentState } from "@/components/workspace/empty-document-state";
+import { KnowledgeSyncCenter } from "@/components/workspace/knowledge-sync-center";
+import { WorkspaceDashboard } from "@/components/workspace/workspace-dashboard";
 import {
   defaultDocumentFilter,
   filterDocumentsForTree,
@@ -28,6 +29,23 @@ import {
   saveDocumentVersions,
   type DocumentVersion,
 } from "@/lib/document-versions";
+import {
+  buildDocumentKnowledgeIndex,
+  createEmptyKnowledgeIndex,
+  loadKnowledgeIndex,
+  removeDocumentsFromKnowledgeIndex,
+  saveKnowledgeIndex,
+  upsertDocumentKnowledgeIndex,
+  type KnowledgeIndexStore,
+} from "@/lib/knowledge-base";
+import {
+  appendKnowledgeSyncLog,
+  createKnowledgeSyncLog,
+  getKnowledgeSyncCandidates,
+  loadKnowledgeSyncLogs,
+  saveKnowledgeSyncLogs,
+  type KnowledgeSyncLog,
+} from "@/lib/knowledge-sync";
 import {
   createDraftDocument,
   getDescendantDocumentIds,
@@ -59,7 +77,10 @@ export function DocumentLayout() {
   const [templateParentId, setTemplateParentId] = useState<string | null>(null);
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
+  const [syncCenterOpen, setSyncCenterOpen] = useState(false);
   const [documentVersions, setDocumentVersions] = useState<DocumentVersion[]>([]);
+  const [knowledgeSyncLogs, setKnowledgeSyncLogs] = useState<KnowledgeSyncLog[]>([]);
+  const [knowledgeIndex, setKnowledgeIndex] = useState<KnowledgeIndexStore>(() => createEmptyKnowledgeIndex());
   const [editorRevisionByDocumentId, setEditorRevisionByDocumentId] = useState<Record<string, number>>({});
   const [documentFilter, setDocumentFilter] = useState<DocumentFilter>(defaultDocumentFilter);
 
@@ -80,6 +101,22 @@ export function DocumentLayout() {
     });
   };
 
+  const commitKnowledgeSyncLogs = (updater: (current: KnowledgeSyncLog[]) => KnowledgeSyncLog[]) => {
+    setKnowledgeSyncLogs((current) => {
+      const nextLogs = updater(current);
+      saveKnowledgeSyncLogs(nextLogs);
+      return nextLogs;
+    });
+  };
+
+  const commitKnowledgeIndex = (updater: (current: KnowledgeIndexStore) => KnowledgeIndexStore) => {
+    setKnowledgeIndex((current) => {
+      const nextIndex = updater(current);
+      saveKnowledgeIndex(nextIndex);
+      return nextIndex;
+    });
+  };
+
   const snapshotDocument = (document: DocumentItem | undefined, options?: { force?: boolean }) => {
     if (!document) return;
     commitDocumentVersions((current) => addDocumentVersion(current, document, options));
@@ -90,14 +127,16 @@ export function DocumentLayout() {
     const loadedActiveId = loadActiveDocumentId();
     const loadedExpandedIds = loadExpandedDocumentIds();
     const availableDocuments = loadedDocuments.filter((document) => !document.deletedAt);
-    const nextActiveId = availableDocuments.some((document) => document.id === loadedActiveId)
+    const nextActiveId = loadedActiveId && availableDocuments.some((document) => document.id === loadedActiveId)
       ? loadedActiveId
-      : availableDocuments[0]?.id ?? null;
+      : null;
 
     setDocuments(loadedDocuments);
     setActiveDocumentId(nextActiveId);
     setExpandedDocumentIds(loadedExpandedIds);
     setDocumentVersions(loadDocumentVersions());
+    setKnowledgeSyncLogs(loadKnowledgeSyncLogs());
+    setKnowledgeIndex(loadKnowledgeIndex());
   }, []);
 
   useEffect(() => {
@@ -234,6 +273,24 @@ export function DocumentLayout() {
     }
   };
 
+  const openDashboard = () => {
+    if (draftDocument && !isDraftDocumentEmpty(draftDocument)) {
+      commitDraftDocument();
+    } else if (draftDocument) {
+      setDraftDocument(null);
+    }
+
+    setActiveDocumentId(null);
+  };
+
+  const applyDashboardFilter = (filter: DocumentFilter) => {
+    setDocumentFilter(filter);
+    setDraftDocument(null);
+
+    const nextDocuments = getDirectFilteredDocuments(visibleDocuments, filter);
+    setActiveDocumentId(nextDocuments[0]?.id ?? null);
+  };
+
   const selectDocument = (documentId: string) => {
     if (!documents.some((document) => document.id === documentId && !document.deletedAt)) return;
 
@@ -274,6 +331,7 @@ export function DocumentLayout() {
         ),
       { immediate: true },
     );
+    commitKnowledgeIndex((current) => removeDocumentsFromKnowledgeIndex(current, idsToDelete));
     setActiveDocumentId(nextActiveDocumentId);
     setExpandedDocumentIds((current) => {
       const next = new Set(current);
@@ -315,6 +373,7 @@ export function DocumentLayout() {
 
     commitDocuments((current) => current.filter((document) => !idsToDelete.has(document.id)), { immediate: true });
     commitDocumentVersions((current) => removeDocumentVersions(current, idsToDelete));
+    commitKnowledgeIndex((current) => removeDocumentsFromKnowledgeIndex(current, idsToDelete));
     setActiveDocumentId(nextActiveDocumentId);
   };
 
@@ -421,10 +480,41 @@ export function DocumentLayout() {
   };
 
   const syncDocumentToKnowledge = (documentId: string) => {
+    const document = visibleDocuments.find((item) => item.id === documentId);
+    if (!document || document.knowledgeStatus === "pending") return;
+
     setDocumentKnowledgeStatus(documentId, "pending");
+    commitKnowledgeSyncLogs((current) =>
+      appendKnowledgeSyncLog(current, createKnowledgeSyncLog(document, "pending", "文档已加入知识库同步队列。")),
+    );
+
+    // 第一版在浏览器本地完成分块和索引；后续这里可以替换为真实后端任务队列。
     window.setTimeout(() => {
+      const payload = buildDocumentKnowledgeIndex(document);
+
+      if (payload.chunks.length === 0) {
+        setDocumentKnowledgeStatus(documentId, "failed");
+        commitKnowledgeSyncLogs((current) =>
+          appendKnowledgeSyncLog(current, createKnowledgeSyncLog(document, "failed", "同步失败：没有可入库的标题或正文内容。")),
+        );
+        return;
+      }
+
+      commitKnowledgeIndex((current) => upsertDocumentKnowledgeIndex(current, payload));
       setDocumentKnowledgeStatus(documentId, "indexed");
+      commitKnowledgeSyncLogs((current) =>
+        appendKnowledgeSyncLog(
+          current,
+          createKnowledgeSyncLog(document, "success", `同步成功：已生成 ${payload.chunks.length} 个知识片段。`),
+        ),
+      );
     }, 900);
+  };
+
+  const syncAllKnowledgeDocuments = () => {
+    getKnowledgeSyncCandidates(visibleDocuments, knowledgeIndex).forEach((document, index) => {
+      window.setTimeout(() => syncDocumentToKnowledge(document.id), index * 150);
+    });
   };
 
   const generateDocumentMetadata = async (documentId: string) => {
@@ -499,12 +589,15 @@ export function DocumentLayout() {
       <DocumentSidebar
         documents={sidebarDocuments}
         allDocuments={visibleDocuments}
+        knowledgeIndex={knowledgeIndex}
         activeDocumentId={activeDocumentId}
         expandedDocumentIds={expandedDocumentIds}
         documentFilter={documentFilter}
         filteredDocumentCount={directFilteredDocuments.length}
         onCreateRoot={() => openTemplatePicker(null)}
         onCreateChild={openTemplatePicker}
+        onOpenDashboard={openDashboard}
+        onOpenSyncCenter={() => setSyncCenterOpen(true)}
         onFilterChange={setDocumentFilter}
         onToggle={toggleDocument}
         onSelect={selectDocument}
@@ -534,15 +627,34 @@ export function DocumentLayout() {
           onRestoreVersion={restoreDocumentVersion}
           onMetaChange={updateDocumentMeta}
           onSyncKnowledge={syncDocumentToKnowledge}
+          onOpenSyncCenter={() => setSyncCenterOpen(true)}
           onGenerateMetadata={generateDocumentMetadata}
           editorKey={String(editorRevisionByDocumentId[activeDocument.id] ?? 0)}
         />
       ) : (
-        <main className="h-screen min-w-0 flex-1">
-          <EmptyDocumentState onCreateDocument={() => openTemplatePicker(null)} />
-        </main>
+        <WorkspaceDashboard
+          documents={visibleDocuments}
+          onCreateDocument={() => openTemplatePicker(null)}
+          onOpenDocument={selectDocument}
+          onApplyFilter={applyDashboardFilter}
+          onOpenSyncCenter={() => setSyncCenterOpen(true)}
+          onSyncAllKnowledge={syncAllKnowledgeDocuments}
+        />
       )}
       <DocumentTemplatePicker open={templatePickerOpen} onOpenChange={setTemplatePickerOpen} onSelect={createDocument} />
+      <KnowledgeSyncCenter
+        open={syncCenterOpen}
+        documents={visibleDocuments}
+        knowledgeIndex={knowledgeIndex}
+        logs={knowledgeSyncLogs}
+        onOpenChange={setSyncCenterOpen}
+        onOpenDocument={(documentId) => {
+          setSyncCenterOpen(false);
+          selectDocument(documentId);
+        }}
+        onSyncDocument={syncDocumentToKnowledge}
+        onSyncAll={syncAllKnowledgeDocuments}
+      />
       <DocumentTrashDialog
         open={trashOpen}
         documents={deletedDocuments}

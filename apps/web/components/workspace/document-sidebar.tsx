@@ -2,20 +2,27 @@ import { Button } from "@/components/tailwind/ui/button";
 import { DocumentFilterPanel } from "@/components/workspace/document-filter-panel";
 import { DocumentSearchPanel } from "@/components/workspace/document-search-panel";
 import { DocumentTree } from "@/components/workspace/document-tree";
+import { KnowledgeAssistant } from "@/components/workspace/knowledge-assistant";
 import type { DocumentFilter } from "@/lib/document-filters";
 import type { DocumentItem } from "@/lib/documents";
+import type { KnowledgeIndexStore } from "@/lib/knowledge-base";
 import { closestCenter, DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
-import { Plus, Trash2 } from "lucide-react";
+import { LayoutDashboard, PanelLeftClose, PanelLeftOpen, Plus, Trash2 } from "lucide-react";
+import type { ReactNode } from "react";
+import { useState } from "react";
 
 interface DocumentSidebarProps {
   documents: DocumentItem[];
   allDocuments: DocumentItem[];
+  knowledgeIndex: KnowledgeIndexStore;
   activeDocumentId: string | null;
   expandedDocumentIds: Set<string>;
   documentFilter: DocumentFilter;
   filteredDocumentCount: number;
   onCreateRoot: () => void;
   onCreateChild: (parentId: string) => void;
+  onOpenDashboard: () => void;
+  onOpenSyncCenter: () => void;
   onFilterChange: (filter: DocumentFilter) => void;
   onToggle: (documentId: string) => void;
   onSelect: (documentId: string) => void;
@@ -29,12 +36,15 @@ interface DocumentSidebarProps {
 export function DocumentSidebar({
   documents,
   allDocuments,
+  knowledgeIndex,
   activeDocumentId,
   expandedDocumentIds,
   documentFilter,
   filteredDocumentCount,
   onCreateRoot,
   onCreateChild,
+  onOpenDashboard,
+  onOpenSyncCenter,
   onFilterChange,
   onToggle,
   onSelect,
@@ -44,6 +54,7 @@ export function DocumentSidebar({
   deletedCount,
   onOpenTrash,
 }: DocumentSidebarProps) {
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const sensors = useSensors(
     useSensor(PointerSensor, {
       activationConstraint: {
@@ -59,10 +70,52 @@ export function DocumentSidebar({
     onReorder(String(active.id), String(over.id));
   };
 
+  if (sidebarCollapsed) {
+    return (
+      <aside className="flex h-screen w-12 shrink-0 flex-col items-center border-r bg-[#fbfbfa] py-4 dark:bg-background">
+        <button
+          type="button"
+          className="flex h-8 w-8 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+          onClick={() => setSidebarCollapsed(false)}
+          title="展开文档栏"
+        >
+          <PanelLeftOpen className="h-4 w-4" />
+          <span className="sr-only">展开文档栏</span>
+        </button>
+
+        <div className="mt-4 grid gap-2">
+          <SidebarRailButton title="工作台" onClick={onOpenDashboard}>
+            <LayoutDashboard className="h-4 w-4" />
+          </SidebarRailButton>
+          <SidebarRailButton title="新建页面" onClick={onCreateRoot}>
+            <Plus className="h-4 w-4" />
+          </SidebarRailButton>
+          <SidebarRailButton title={deletedCount ? `垃圾桶 (${deletedCount})` : "垃圾桶"} onClick={onOpenTrash}>
+            <Trash2 className="h-4 w-4" />
+          </SidebarRailButton>
+        </div>
+      </aside>
+    );
+  }
+
   return (
     <aside className="flex h-screen w-72 shrink-0 flex-col border-r bg-[#fbfbfa] dark:bg-background">
       <div className="px-4 py-4">
-        <div className="text-sm font-semibold">DocFlow AI</div>
+        <div className="flex items-start justify-between gap-3">
+          <button type="button" className="min-w-0 text-left text-sm font-semibold hover:text-foreground" onClick={onOpenDashboard}>
+            DocFlow AI
+          </button>
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7 shrink-0 text-muted-foreground"
+            onClick={() => setSidebarCollapsed(true)}
+            title="收起文档栏"
+          >
+            <PanelLeftClose className="h-4 w-4" />
+            <span className="sr-only">收起文档栏</span>
+          </Button>
+        </div>
         <div className="mt-1 text-xs text-muted-foreground">企业知识库</div>
       </div>
 
@@ -108,6 +161,36 @@ export function DocumentSidebar({
           </div>
         )}
       </div>
+
+      <div className="border-t px-3 py-3">
+        <KnowledgeAssistant
+          knowledgeIndex={knowledgeIndex}
+          onOpenDocument={onSelect}
+          onOpenSyncCenter={onOpenSyncCenter}
+        />
+      </div>
     </aside>
+  );
+}
+
+function SidebarRailButton({
+  title,
+  onClick,
+  children,
+}: {
+  title: string;
+  onClick: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      className="flex h-8 w-8 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+      onClick={onClick}
+      title={title}
+    >
+      {children}
+      <span className="sr-only">{title}</span>
+    </button>
   );
 }
