@@ -1,10 +1,10 @@
 import TailwindAdvancedEditor, { type EditorChangePayload } from "@/components/tailwind/advanced-editor";
-import { DocumentOutline } from "@/components/workspace/document-outline";
+import { DocumentRightPanel } from "@/components/workspace/document-right-panel";
 import { DocumentTitleInput } from "@/components/workspace/document-title-input";
 import { DocumentVersionHistory } from "@/components/workspace/document-version-history";
 import { SaveStatus } from "@/components/workspace/save-status";
 import type { DocumentVersion } from "@/lib/document-versions";
-import type { DocumentItem, DraftDocument, SaveStatusValue } from "@/lib/documents";
+import type { DocumentItem, DocumentMetaUpdate, DraftDocument, SaveStatusValue } from "@/lib/documents";
 import { Button } from "@/components/tailwind/ui/button";
 import { ArrowLeft, Maximize2 } from "lucide-react";
 
@@ -17,6 +17,8 @@ interface DocumentEditorPageProps {
   onBack?: () => void;
   versions?: DocumentVersion[];
   onRestoreVersion?: (versionId: string) => void;
+  onMetaChange?: (documentId: string, updates: DocumentMetaUpdate) => void;
+  onSyncKnowledge?: (documentId: string) => void;
   editorKey?: string;
 }
 
@@ -29,28 +31,32 @@ export function DocumentEditorPage({
   onBack,
   versions = [],
   onRestoreVersion,
+  onMetaChange,
+  onSyncKnowledge,
   editorKey,
 }: DocumentEditorPageProps) {
   const documentId = document.id;
+  const persistedDocument = isDraft ? undefined : (document as DocumentItem);
+  const wordCount = document.contentText?.trim().length ?? 0;
 
   return (
-    <main className="relative flex h-screen min-w-0 flex-1 bg-background">
-      <div className="absolute right-6 top-5 z-20 flex items-center gap-2">
-        {!isDraft && (
-          <>
-            {onRestoreVersion && (
-              <DocumentVersionHistory
-                documentTitle={document.title}
-                versions={versions}
-                onRestore={onRestoreVersion}
-              />
-            )}
-            <SaveStatus status={saveStatus} />
-          </>
-        )}
-      </div>
+    <main className="flex h-screen min-w-0 flex-1 bg-background">
+      <div className="relative min-w-0 flex-1 overflow-y-auto">
+        <div className="absolute right-6 top-5 z-20 flex items-center gap-2">
+          {!isDraft && (
+            <>
+              {onRestoreVersion && (
+                <DocumentVersionHistory
+                  documentTitle={document.title}
+                  versions={versions}
+                  onRestore={onRestoreVersion}
+                />
+              )}
+              <SaveStatus status={saveStatus} />
+            </>
+          )}
+        </div>
 
-      <div className="min-w-0 flex-1 overflow-y-auto">
         <div className="mx-auto max-w-[760px] px-8 pb-24 pt-20 sm:px-12">
           {onBack && (
             <Button variant="ghost" size="sm" className="mb-5 gap-2 px-2 text-muted-foreground" onClick={() => onBack()}>
@@ -80,7 +86,13 @@ export function DocumentEditorPage({
           </div>
         </div>
       </div>
-      <DocumentOutline contentJson={document.contentJson} />
+      <DocumentRightPanel
+        document={persistedDocument}
+        contentJson={document.contentJson}
+        wordCount={wordCount}
+        onMetaChange={onMetaChange ? (updates) => onMetaChange(documentId, updates) : undefined}
+        onSyncKnowledge={onSyncKnowledge ? () => onSyncKnowledge(documentId) : undefined}
+      />
     </main>
   );
 }

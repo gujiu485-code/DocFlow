@@ -33,6 +33,7 @@ import {
   saveDocuments,
   saveExpandedDocumentIds,
   materializeDraftDocument,
+  type DocumentMetaUpdate,
   type DraftDocument,
   type DocumentItem,
   type SaveStatusValue,
@@ -329,6 +330,47 @@ export function DocumentLayout() {
     );
   };
 
+  const updateDocumentMeta = (documentId: string, updates: DocumentMetaUpdate) => {
+    const now = new Date().toISOString();
+
+    commitDocuments((current) =>
+      current.map((document) => {
+        if (document.id !== documentId || document.deletedAt) return document;
+
+        const shouldMarkKnowledgeOutdated =
+          !("knowledgeStatus" in updates) &&
+          document.knowledgeStatus === "indexed" &&
+          ("summary" in updates || "tags" in updates);
+
+        return {
+          ...document,
+          ...updates,
+          knowledgeStatus: shouldMarkKnowledgeOutdated ? "outdated" : updates.knowledgeStatus ?? document.knowledgeStatus,
+          updatedAt: now,
+        };
+      }),
+    );
+  };
+
+  const setDocumentKnowledgeStatus = (documentId: string, knowledgeStatus: DocumentItem["knowledgeStatus"]) => {
+    const now = new Date().toISOString();
+
+    commitDocuments(
+      (current) =>
+        current.map((document) =>
+          document.id === documentId && !document.deletedAt ? { ...document, knowledgeStatus, updatedAt: now } : document,
+        ),
+      { immediate: true },
+    );
+  };
+
+  const syncDocumentToKnowledge = (documentId: string) => {
+    setDocumentKnowledgeStatus(documentId, "pending");
+    window.setTimeout(() => {
+      setDocumentKnowledgeStatus(documentId, "indexed");
+    }, 900);
+  };
+
   const restoreDocumentVersion = (versionId: string) => {
     const version = documentVersions.find((item) => item.id === versionId);
     if (!version) return;
@@ -396,6 +438,8 @@ export function DocumentLayout() {
           onContentChange={updateDocumentContent}
           versions={activeDocumentVersions}
           onRestoreVersion={restoreDocumentVersion}
+          onMetaChange={updateDocumentMeta}
+          onSyncKnowledge={syncDocumentToKnowledge}
           editorKey={String(editorRevisionByDocumentId[activeDocument.id] ?? 0)}
         />
       ) : (

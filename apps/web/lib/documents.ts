@@ -2,6 +2,8 @@ import { createEmptyEditorContent, defaultEditorContent } from "@/lib/content";
 
 export type KnowledgeStatus = "none" | "pending" | "indexed" | "failed" | "outdated";
 
+export type DocumentStatus = "draft" | "reviewing" | "published" | "archived";
+
 export type SaveStatusValue = "saving" | "saved" | "error";
 
 export type DocumentItem = {
@@ -16,8 +18,11 @@ export type DocumentItem = {
   createdAt: string;
   updatedAt: string;
   deletedAt?: string | null;
+  status?: DocumentStatus;
   knowledgeStatus?: KnowledgeStatus;
 };
+
+export type DocumentMetaUpdate = Partial<Pick<DocumentItem, "status" | "tags" | "summary" | "knowledgeStatus">>;
 
 export type DraftDocument = {
   id: string;
@@ -59,6 +64,7 @@ export const createDocumentItem = (
     createdAt: now,
     updatedAt: now,
     deletedAt: null,
+    status: "draft",
     knowledgeStatus: "none",
   };
 };
@@ -90,6 +96,7 @@ export const materializeDraftDocument = (draftDocument: DraftDocument, sortOrder
     createdAt: now,
     updatedAt: now,
     deletedAt: null,
+    status: "draft",
   };
 };
 
@@ -132,6 +139,8 @@ const normalizeDocument = (value: Partial<DocumentItem> & Record<string, unknown
     createdAt: typeof value.createdAt === "string" ? value.createdAt : now,
     updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : now,
     deletedAt: typeof value.deletedAt === "string" ? value.deletedAt : null,
+    status:
+      value.status === "reviewing" || value.status === "published" || value.status === "archived" ? value.status : "draft",
     knowledgeStatus:
       value.knowledgeStatus === "pending" ||
       value.knowledgeStatus === "indexed" ||
