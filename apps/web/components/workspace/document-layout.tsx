@@ -7,6 +7,13 @@ import { DocumentTemplatePicker } from "@/components/workspace/document-template
 import { DocumentTrashDialog } from "@/components/workspace/document-trash-dialog";
 import { EmptyDocumentState } from "@/components/workspace/empty-document-state";
 import {
+  defaultDocumentFilter,
+  filterDocumentsForTree,
+  getDirectFilteredDocuments,
+  isDefaultDocumentFilter,
+  type DocumentFilter,
+} from "@/lib/document-filters";
+import {
   getDocumentTemplate,
   getTemplateBodyContent,
   getTemplateBodyText,
@@ -54,6 +61,7 @@ export function DocumentLayout() {
   const [trashOpen, setTrashOpen] = useState(false);
   const [documentVersions, setDocumentVersions] = useState<DocumentVersion[]>([]);
   const [editorRevisionByDocumentId, setEditorRevisionByDocumentId] = useState<Record<string, number>>({});
+  const [documentFilter, setDocumentFilter] = useState<DocumentFilter>(defaultDocumentFilter);
 
   const persistDocuments = useDebouncedCallback((nextDocuments: DocumentItem[]) => {
     try {
@@ -101,11 +109,58 @@ export function DocumentLayout() {
   }, [expandedDocumentIds]);
 
   const visibleDocuments = useMemo(() => documents.filter((document) => !document.deletedAt), [documents]);
+  const directFilteredDocuments = useMemo(
+    () => getDirectFilteredDocuments(visibleDocuments, documentFilter),
+    [visibleDocuments, documentFilter],
+  );
+  const sidebarDocuments = useMemo(
+    () => filterDocumentsForTree(visibleDocuments, documentFilter),
+    [visibleDocuments, documentFilter],
+  );
   const deletedDocuments = useMemo(() => documents.filter((document) => document.deletedAt), [documents]);
   const activeDocument = documents.find((document) => document.id === activeDocumentId && !document.deletedAt) ?? null;
   const activeDocumentVersions = activeDocument ? getDocumentVersions(documentVersions, activeDocument.id) : [];
   const activeDraftDocument = draftDocument;
   const activeDraftDocumentId = activeDraftDocument?.id ?? null;
+
+  useEffect(() => {
+    if (draftDocument || isDefaultDocumentFilter(documentFilter)) return;
+
+    const activeDocumentInFilter = activeDocumentId ? sidebarDocuments.some((document) => document.id === activeDocumentId) : false;
+    if (activeDocumentInFilter) return;
+
+    setActiveDocumentId(directFilteredDocuments[0]?.id ?? sidebarDocuments[0]?.id ?? null);
+  }, [activeDocumentId, directFilteredDocuments, documentFilter, draftDocument, sidebarDocuments]);
+
+  useEffect(() => {
+    if (isDefaultDocumentFilter(documentFilter)) return;
+
+    const documentById = new Map(visibleDocuments.map((document) => [document.id, document]));
+    const ancestorIds = new Set<string>();
+
+    for (const document of directFilteredDocuments) {
+      let parentId = document.parentId;
+      while (parentId) {
+        const parent = documentById.get(parentId);
+        if (!parent) break;
+        ancestorIds.add(parent.id);
+        parentId = parent.parentId;
+      }
+    }
+
+    if (!ancestorIds.size) return;
+
+    setExpandedDocumentIds((current) => {
+      const next = new Set(current);
+      let changed = false;
+      for (const id of ancestorIds) {
+        if (next.has(id)) continue;
+        next.add(id);
+        changed = true;
+      }
+      return changed ? next : current;
+    });
+  }, [directFilteredDocuments, documentFilter, visibleDocuments]);
 
   const commitDocuments = (updater: (current: DocumentItem[]) => DocumentItem[], options?: { immediate?: boolean }) => {
     setDocuments((current) => {
@@ -158,6 +213,7 @@ export function DocumentLayout() {
       commitDraftDocument();
     }
 
+    setDocumentFilter(defaultDocumentFilter);
     setTemplateParentId(parentId);
     setTemplatePickerOpen(true);
   };
@@ -371,6 +427,40 @@ export function DocumentLayout() {
     }, 900);
   };
 
+  const generateDocumentMetadata = async (documentId: string) => {
+    const document = documents.find((item) => item.id === documentId && !item.deletedAt);
+    if (!document) throw new Error("当前文档不存在。");
+
+    const title = document.title.trim();
+    const contentText = document.contentText?.trim() ?? "";
+    if (!title && !contentText) throw new Error("文档标题和正文都为空，无法生成摘要与标签。");
+
+    const response = await fetch("/api/document/metadata", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        title,
+        contentText,
+      }),
+    });
+
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(payload?.error ?? "AI 生成失败，请稍后重试。");
+    }
+
+    const summary = typeof payload?.summary === "string" ? payload.summary : "";
+    const tags = Array.isArray(payload?.tags) ? payload.tags.filter((tag: unknown): tag is string => typeof tag === "string") : [];
+    if (!summary && tags.length === 0) throw new Error("AI 没有返回可用的摘要或标签。");
+
+    updateDocumentMeta(documentId, {
+      summary,
+      tags,
+    });
+  };
+
   const restoreDocumentVersion = (versionId: string) => {
     const version = documentVersions.find((item) => item.id === versionId);
     if (!version) return;
@@ -407,11 +497,15 @@ export function DocumentLayout() {
   return (
     <div className="flex min-h-screen bg-background text-foreground">
       <DocumentSidebar
-        documents={visibleDocuments}
+        documents={sidebarDocuments}
+        allDocuments={visibleDocuments}
         activeDocumentId={activeDocumentId}
         expandedDocumentIds={expandedDocumentIds}
+        documentFilter={documentFilter}
+        filteredDocumentCount={directFilteredDocuments.length}
         onCreateRoot={() => openTemplatePicker(null)}
         onCreateChild={openTemplatePicker}
+        onFilterChange={setDocumentFilter}
         onToggle={toggleDocument}
         onSelect={selectDocument}
         onRename={renameDocument}
@@ -440,6 +534,7 @@ export function DocumentLayout() {
           onRestoreVersion={restoreDocumentVersion}
           onMetaChange={updateDocumentMeta}
           onSyncKnowledge={syncDocumentToKnowledge}
+          onGenerateMetadata={generateDocumentMetadata}
           editorKey={String(editorRevisionByDocumentId[activeDocument.id] ?? 0)}
         />
       ) : (

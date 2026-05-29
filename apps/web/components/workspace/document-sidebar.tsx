@@ -1,16 +1,22 @@
 import { Button } from "@/components/tailwind/ui/button";
+import { DocumentFilterPanel } from "@/components/workspace/document-filter-panel";
 import { DocumentSearchPanel } from "@/components/workspace/document-search-panel";
 import { DocumentTree } from "@/components/workspace/document-tree";
+import type { DocumentFilter } from "@/lib/document-filters";
 import type { DocumentItem } from "@/lib/documents";
 import { closestCenter, DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { Plus, Trash2 } from "lucide-react";
 
 interface DocumentSidebarProps {
   documents: DocumentItem[];
+  allDocuments: DocumentItem[];
   activeDocumentId: string | null;
   expandedDocumentIds: Set<string>;
+  documentFilter: DocumentFilter;
+  filteredDocumentCount: number;
   onCreateRoot: () => void;
   onCreateChild: (parentId: string) => void;
+  onFilterChange: (filter: DocumentFilter) => void;
   onToggle: (documentId: string) => void;
   onSelect: (documentId: string) => void;
   onRename: (documentId: string, title: string) => void;
@@ -22,10 +28,14 @@ interface DocumentSidebarProps {
 
 export function DocumentSidebar({
   documents,
+  allDocuments,
   activeDocumentId,
   expandedDocumentIds,
+  documentFilter,
+  filteredDocumentCount,
   onCreateRoot,
   onCreateChild,
+  onFilterChange,
   onToggle,
   onSelect,
   onRename,
@@ -68,6 +78,14 @@ export function DocumentSidebar({
         <div className="mt-2">
           <DocumentSearchPanel documents={documents} activeDocumentId={activeDocumentId} onSelect={onSelect} />
         </div>
+        <div className="mt-2">
+          <DocumentFilterPanel
+            documents={allDocuments}
+            filter={documentFilter}
+            filteredCount={filteredDocumentCount}
+            onFilterChange={onFilterChange}
+          />
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto px-2 pb-4">
@@ -85,7 +103,9 @@ export function DocumentSidebar({
             />
           </DndContext>
         ) : (
-          <div className="px-2 py-6 text-sm text-muted-foreground">暂无文档</div>
+          <div className="px-2 py-6 text-sm text-muted-foreground">
+            {allDocuments.length ? "没有符合筛选条件的文档" : "暂无文档"}
+          </div>
         )}
       </div>
     </aside>

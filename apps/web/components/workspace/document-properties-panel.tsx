@@ -1,20 +1,33 @@
+"use client";
+
 import { Button } from "@/components/tailwind/ui/button";
 import { DocumentMetaInfo } from "@/components/workspace/document-meta-info";
 import { DocumentStatusSelect } from "@/components/workspace/document-status-select";
 import { DocumentTagInput } from "@/components/workspace/document-tag-input";
 import { KnowledgeStatusBadge } from "@/components/workspace/knowledge-status-badge";
 import type { DocumentItem, DocumentMetaUpdate } from "@/lib/documents";
-import { DatabaseZap, FileSliders } from "lucide-react";
+import { DatabaseZap, FileSliders, Sparkles, TriangleAlert } from "lucide-react";
 import type { ReactNode } from "react";
+import { useState } from "react";
 
 interface DocumentPropertiesPanelProps {
   document?: DocumentItem;
   wordCount: number;
   onChange?: (updates: DocumentMetaUpdate) => void;
   onSyncKnowledge?: () => void;
+  onGenerateMetadata?: () => Promise<void>;
 }
 
-export function DocumentPropertiesPanel({ document, wordCount, onChange, onSyncKnowledge }: DocumentPropertiesPanelProps) {
+export function DocumentPropertiesPanel({
+  document,
+  wordCount,
+  onChange,
+  onSyncKnowledge,
+  onGenerateMetadata,
+}: DocumentPropertiesPanelProps) {
+  const [generatingMetadata, setGeneratingMetadata] = useState(false);
+  const [metadataError, setMetadataError] = useState<string | null>(null);
+
   if (!document) {
     return (
       <div className="rounded-md border border-dashed px-3 py-8 text-center">
@@ -26,9 +39,47 @@ export function DocumentPropertiesPanel({ document, wordCount, onChange, onSyncK
   }
 
   const knowledgeStatus = document.knowledgeStatus ?? "none";
+  const canGenerateMetadata = Boolean(onGenerateMetadata && (document.title.trim() || document.contentText?.trim()));
+
+  const generateMetadata = async () => {
+    if (!onGenerateMetadata || generatingMetadata) return;
+
+    setGeneratingMetadata(true);
+    setMetadataError(null);
+    try {
+      await onGenerateMetadata();
+    } catch (error) {
+      setMetadataError(error instanceof Error ? error.message : "生成失败，请稍后重试。");
+    } finally {
+      setGeneratingMetadata(false);
+    }
+  };
 
   return (
     <div className="space-y-6">
+      <section className="space-y-3">
+        <div className="text-xs font-medium text-muted-foreground">AI 辅助</div>
+        <div className="rounded-md border bg-background p-3">
+          <Button
+            variant="outline"
+            size="sm"
+            className="h-8 w-full gap-2"
+            onClick={generateMetadata}
+            disabled={!canGenerateMetadata || generatingMetadata}
+          >
+            <Sparkles className="h-3.5 w-3.5" />
+            {generatingMetadata ? "生成中..." : "AI 生成摘要与标签"}
+          </Button>
+          <p className="mt-2 text-xs leading-5 text-muted-foreground">会根据标题和正文覆盖当前摘要与标签。</p>
+          {metadataError && (
+            <div className="mt-2 flex gap-1.5 rounded-md bg-red-50 px-2 py-1.5 text-xs leading-5 text-red-700 dark:bg-red-950 dark:text-red-300">
+              <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+              <span>{metadataError}</span>
+            </div>
+          )}
+        </div>
+      </section>
+
       <section className="space-y-3">
         <div className="text-xs font-medium text-muted-foreground">基础属性</div>
         <PropertyRow label="状态">

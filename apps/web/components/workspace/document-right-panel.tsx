@@ -16,6 +16,7 @@ interface DocumentRightPanelProps {
   wordCount: number;
   onMetaChange?: (updates: DocumentMetaUpdate) => void;
   onSyncKnowledge?: () => void;
+  onGenerateMetadata?: () => Promise<void>;
 }
 
 export function DocumentRightPanel({
@@ -24,6 +25,7 @@ export function DocumentRightPanel({
   wordCount,
   onMetaChange,
   onSyncKnowledge,
+  onGenerateMetadata,
 }: DocumentRightPanelProps) {
   const [activeTab, setActiveTab] = useState<RightPanelTab>("properties");
 
@@ -49,6 +51,7 @@ export function DocumentRightPanel({
             wordCount={wordCount}
             onChange={onMetaChange}
             onSyncKnowledge={onSyncKnowledge}
+            onGenerateMetadata={onGenerateMetadata}
           />
         ) : (
           <DocumentOutline contentJson={contentJson} />
