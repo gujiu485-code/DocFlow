@@ -6,8 +6,6 @@ import { DocumentVersionHistory } from "@/components/workspace/document-version-
 import { SaveStatus } from "@/components/workspace/save-status";
 import type { DocumentVersion } from "@/lib/document-versions";
 import type { DocumentItem, DocumentMetaUpdate, DraftDocument, SaveStatusValue } from "@/lib/documents";
-import { Button } from "@/components/tailwind/ui/button";
-import { ArrowLeft, Maximize2 } from "lucide-react";
 
 interface DocumentEditorPageProps {
   document: DocumentItem | DraftDocument;
@@ -15,7 +13,6 @@ interface DocumentEditorPageProps {
   onTitleChange: (title: string) => void;
   onContentChange: (documentId: string, payload: EditorChangePayload) => void;
   isDraft?: boolean;
-  onBack?: () => void;
   versions?: DocumentVersion[];
   onRestoreVersion?: (versionId: string) => void;
   onMetaChange?: (documentId: string, updates: DocumentMetaUpdate) => void;
@@ -31,7 +28,6 @@ export function DocumentEditorPage({
   onTitleChange,
   onContentChange,
   isDraft = false,
-  onBack,
   versions = [],
   onRestoreVersion,
   onMetaChange,
@@ -43,33 +39,39 @@ export function DocumentEditorPage({
   const documentId = document.id;
   const persistedDocument = isDraft ? undefined : (document as DocumentItem);
   const wordCount = document.contentText?.trim().length ?? 0;
+  const titleLabel = document.title.trim() || "无标题";
 
   return (
     <main className="flex h-screen min-w-0 flex-1 bg-background">
       <div className="relative min-w-0 flex-1 overflow-y-auto">
-        <div className="absolute right-6 top-5 z-20 flex items-center gap-2">
-          <DocumentExportMenu document={document} />
-          {!isDraft && (
-            <>
-              {onRestoreVersion && (
-                <DocumentVersionHistory
-                  documentTitle={document.title}
-                  versions={versions}
-                  onRestore={onRestoreVersion}
-                />
+        <div className="sticky top-0 z-30 border-b bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:px-6">
+          <div className="mx-auto flex max-w-5xl items-center justify-between gap-3">
+            <div className="min-w-0">
+              <div className="truncate text-sm font-medium">{isDraft ? "正在新建页面" : titleLabel}</div>
+              <div className="truncate text-xs text-muted-foreground">
+                {isDraft ? "输入标题或正文后会保存为文档，可从左侧工作台退出" : "文档编辑"}
+              </div>
+            </div>
+
+            <div className="flex shrink-0 items-center gap-2">
+              <DocumentExportMenu document={document} />
+              {!isDraft && (
+                <>
+                  {onRestoreVersion && (
+                    <DocumentVersionHistory
+                      documentTitle={document.title}
+                      versions={versions}
+                      onRestore={onRestoreVersion}
+                    />
+                  )}
+                  <SaveStatus status={saveStatus} />
+                </>
               )}
-              <SaveStatus status={saveStatus} />
-            </>
-          )}
+            </div>
+          </div>
         </div>
 
-        <div className="mx-auto max-w-[760px] px-8 pb-24 pt-20 sm:px-12">
-          {onBack && (
-            <Button variant="ghost" size="sm" className="mb-5 gap-2 px-2 text-muted-foreground" onClick={() => onBack()}>
-              {isDraft ? <Maximize2 className="h-4 w-4" /> : <ArrowLeft className="h-4 w-4" />}
-              返回
-            </Button>
-          )}
+        <div className="mx-auto max-w-[760px] px-8 pb-24 pt-10 sm:px-12">
           <DocumentTitleInput
             title={document.title}
             onChange={onTitleChange}

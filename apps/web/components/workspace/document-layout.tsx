@@ -655,6 +655,7 @@ export function DocumentLayout() {
         allDocuments={visibleDocuments}
         knowledgeIndex={knowledgeIndex}
         activeDocumentId={activeDocumentId}
+        workspaceActive={!activeDocument && !activeDraftDocument}
         expandedDocumentIds={expandedDocumentIds}
         documentFilter={documentFilter}
         filteredDocumentCount={directFilteredDocuments.length}
@@ -677,7 +678,6 @@ export function DocumentLayout() {
           document={activeDraftDocument}
           saveStatus={saveStatus}
           isDraft
-          onBack={commitDraftDocument}
           onTitleChange={updateDraftTitle}
           onContentChange={updateDocumentContent}
         />

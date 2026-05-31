@@ -6,6 +6,7 @@ import { KnowledgeAssistant } from "@/components/workspace/knowledge-assistant";
 import type { DocumentFilter } from "@/lib/document-filters";
 import type { DocumentItem } from "@/lib/documents";
 import type { KnowledgeIndexStore } from "@/lib/knowledge-base";
+import { cn } from "@/lib/utils";
 import { closestCenter, DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
 import { LayoutDashboard, PanelLeftClose, PanelLeftOpen, Plus, Trash2 } from "lucide-react";
 import type { ReactNode } from "react";
@@ -16,6 +17,7 @@ interface DocumentSidebarProps {
   allDocuments: DocumentItem[];
   knowledgeIndex: KnowledgeIndexStore;
   activeDocumentId: string | null;
+  workspaceActive?: boolean;
   expandedDocumentIds: Set<string>;
   documentFilter: DocumentFilter;
   filteredDocumentCount: number;
@@ -38,6 +40,7 @@ export function DocumentSidebar({
   allDocuments,
   knowledgeIndex,
   activeDocumentId,
+  workspaceActive = false,
   expandedDocumentIds,
   documentFilter,
   filteredDocumentCount,
@@ -84,7 +87,7 @@ export function DocumentSidebar({
         </button>
 
         <div className="mt-4 grid gap-2">
-          <SidebarRailButton title="工作台" onClick={onOpenDashboard}>
+          <SidebarRailButton title="工作台" active={workspaceActive} onClick={onOpenDashboard}>
             <LayoutDashboard className="h-4 w-4" />
           </SidebarRailButton>
           <SidebarRailButton title="新建页面" onClick={onCreateRoot}>
@@ -120,6 +123,17 @@ export function DocumentSidebar({
       </div>
 
       <div className="px-3 pb-3">
+        <Button
+          variant="ghost"
+          className={cn(
+            "h-8 w-full justify-start gap-2 px-2 text-muted-foreground",
+            workspaceActive && "bg-accent text-foreground",
+          )}
+          onClick={onOpenDashboard}
+        >
+          <LayoutDashboard className="h-4 w-4" />
+          工作台
+        </Button>
         <Button variant="ghost" className="h-8 w-full justify-start gap-2 px-2 text-muted-foreground" onClick={onCreateRoot}>
           <Plus className="h-4 w-4" />
           新建页面
@@ -175,17 +189,22 @@ export function DocumentSidebar({
 
 function SidebarRailButton({
   title,
+  active = false,
   onClick,
   children,
 }: {
   title: string;
+  active?: boolean;
   onClick: () => void;
   children: ReactNode;
 }) {
   return (
     <button
       type="button"
-      className="flex h-8 w-8 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+      className={cn(
+        "flex h-8 w-8 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground",
+        active && "bg-accent text-foreground",
+      )}
       onClick={onClick}
       title={title}
     >
