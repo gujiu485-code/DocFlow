@@ -81,173 +81,177 @@ export function KnowledgeSyncCenter({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-5xl">
-        <DialogHeader>
-          <DialogTitle>知识库同步任务中心</DialogTitle>
-          <DialogDescription>统一查看待入库文档、同步状态和最近任务记录。</DialogDescription>
-        </DialogHeader>
-
-        <div className="grid gap-3 sm:grid-cols-4">
-          <SyncStatCard icon={<RadioTower className="h-4 w-4" />} label="已入库" value={indexedCount} />
-          <SyncStatCard icon={<FileText className="h-4 w-4" />} label="知识片段" value={knowledgeIndex.chunks.length} />
-          <SyncStatCard icon={<Loader2 className="h-4 w-4" />} label="同步中" value={pendingCount} />
-          <SyncStatCard icon={<TriangleAlert className="h-4 w-4" />} label="失败待重试" value={failedCount} />
+      <DialogContent className="grid max-h-[92vh] w-[calc(100vw-2rem)] max-w-5xl grid-rows-[auto_minmax(0,1fr)] gap-0 overflow-hidden p-0">
+        <div className="border-b px-5 py-4 pr-12">
+          <DialogHeader>
+            <DialogTitle>知识库同步任务中心</DialogTitle>
+            <DialogDescription>统一查看待入库文档、同步状态和最近任务记录。</DialogDescription>
+          </DialogHeader>
         </div>
 
-        <section className="rounded-md border bg-background p-3">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-semibold">本地知识库检索</h3>
-              <p className="mt-1 text-xs text-muted-foreground">搜索已入库的知识片段，点击结果可回到原文档。</p>
-            </div>
-            <div className="relative w-full sm:w-80">
-              <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
-              <input
-                value={searchKeyword}
-                onChange={(event) => setSearchKeyword(event.target.value)}
-                className="h-8 w-full rounded-md border bg-background pl-8 pr-3 text-sm outline-none focus:border-foreground"
-                placeholder="搜索知识库片段"
-              />
-            </div>
+        <div className="min-h-0 space-y-4 overflow-y-auto px-5 py-4">
+          <div className="grid gap-3 sm:grid-cols-4">
+            <SyncStatCard icon={<RadioTower className="h-4 w-4" />} label="已入库" value={indexedCount} />
+            <SyncStatCard icon={<FileText className="h-4 w-4" />} label="知识片段" value={knowledgeIndex.chunks.length} />
+            <SyncStatCard icon={<Loader2 className="h-4 w-4" />} label="同步中" value={pendingCount} />
+            <SyncStatCard icon={<TriangleAlert className="h-4 w-4" />} label="失败待重试" value={failedCount} />
           </div>
 
-          {searchKeyword.trim() ? (
-            searchResults.length ? (
-              <div className="mt-3 grid gap-2 md:grid-cols-2">
-                {searchResults.slice(0, 4).map((result) => (
-                  <button
-                    key={result.id}
-                    type="button"
-                    className="rounded-md border px-3 py-2 text-left transition-colors hover:bg-accent"
-                    onClick={() => onOpenDocument(result.documentId)}
-                  >
-                    <div className="flex items-center justify-between gap-3">
-                      <span className="min-w-0 truncate text-sm font-medium">{result.documentTitle}</span>
-                      <span className="shrink-0 text-xs text-muted-foreground">score {result.score}</span>
-                    </div>
-                    {result.headingPath.length > 0 && (
-                      <div className="mt-1 truncate text-xs text-muted-foreground">{result.headingPath.join(" / ")}</div>
-                    )}
-                    <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{result.snippet}</p>
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <div className="mt-3 rounded-md border border-dashed px-3 py-5 text-center text-sm text-muted-foreground">
-                没有找到匹配的知识片段。
-              </div>
-            )
-          ) : (
-            <div className="mt-3 rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
-              当前已索引 {knowledgeIndex.documents.length} 篇文档，共 {knowledgeIndex.chunks.length} 个知识片段。
-            </div>
-          )}
-        </section>
-
-        <div className="grid min-h-0 gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <section className="min-w-0">
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+          <section className="rounded-md border bg-background p-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <h3 className="text-sm font-semibold">待处理队列</h3>
-                <p className="mt-1 text-xs text-muted-foreground">未同步、失败、过期和正在同步的文档会出现在这里。</p>
+                <h3 className="text-sm font-semibold">本地知识库检索</h3>
+                <p className="mt-1 text-xs text-muted-foreground">搜索已入库的知识片段，点击结果可回到原文档。</p>
               </div>
-              <Button size="sm" className="h-8 gap-2" disabled={!syncCandidates.length} onClick={onSyncAll}>
-                <DatabaseZap className="h-3.5 w-3.5" />
-                同步全部待处理
-              </Button>
+              <div className="relative w-full sm:w-80">
+                <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                <input
+                  value={searchKeyword}
+                  onChange={(event) => setSearchKeyword(event.target.value)}
+                  className="h-8 w-full rounded-md border bg-background pl-8 pr-3 text-sm outline-none focus:border-foreground"
+                  placeholder="搜索知识库片段"
+                />
+              </div>
             </div>
 
-            {queueDocuments.length ? (
-              <div className="max-h-[420px] overflow-y-auto rounded-md border bg-background">
-                {queueDocuments.map((document) => {
-                  const indexStale = document.knowledgeStatus === "indexed" && isDocumentKnowledgeIndexStale(document, knowledgeIndex);
-                  const knowledgeStatus = indexStale ? "outdated" : document.knowledgeStatus ?? "none";
-                  const syncing = knowledgeStatus === "pending";
-                  const canSync = knowledgeStatus === "none" || knowledgeStatus === "failed" || knowledgeStatus === "outdated";
-
-                  return (
-                    <div key={document.id} className="flex items-center justify-between gap-3 border-b p-3 last:border-b-0">
-                      <button
-                        type="button"
-                        className="flex min-w-0 flex-1 items-start gap-2 text-left"
-                        onClick={() => onOpenDocument(document.id)}
-                      >
-                        <FileText className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                        <div className="min-w-0">
-                          <div className="truncate text-sm font-medium">{document.title || "无标题"}</div>
-                          <div className="mt-1 line-clamp-1 text-xs text-muted-foreground">
-                            {document.summary || document.contentText || "暂无摘要"}
-                          </div>
-                          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                            <KnowledgeStatusBadge status={knowledgeStatus} />
-                            <span>{formatDateTime(document.updatedAt)}</span>
-                          </div>
-                        </div>
-                      </button>
-
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 shrink-0 gap-1.5"
-                        disabled={!canSync}
-                        onClick={() => onSyncDocument(document.id)}
-                      >
-                        {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <DatabaseZap className="h-3.5 w-3.5" />}
-                        {syncing ? "同步中" : "同步"}
-                      </Button>
-                    </div>
-                  );
-                })}
-              </div>
+            {searchKeyword.trim() ? (
+              searchResults.length ? (
+                <div className="mt-3 grid gap-2 md:grid-cols-2">
+                  {searchResults.slice(0, 4).map((result) => (
+                    <button
+                      key={result.id}
+                      type="button"
+                      className="rounded-md border px-3 py-2 text-left transition-colors hover:bg-accent"
+                      onClick={() => onOpenDocument(result.documentId)}
+                    >
+                      <div className="flex items-center justify-between gap-3">
+                        <span className="min-w-0 truncate text-sm font-medium">{result.documentTitle}</span>
+                        <span className="shrink-0 text-xs text-muted-foreground">score {result.score}</span>
+                      </div>
+                      {result.headingPath.length > 0 && (
+                        <div className="mt-1 truncate text-xs text-muted-foreground">{result.headingPath.join(" / ")}</div>
+                      )}
+                      <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{result.snippet}</p>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="mt-3 rounded-md border border-dashed px-3 py-5 text-center text-sm text-muted-foreground">
+                  没有找到匹配的知识片段。
+                </div>
+              )
             ) : (
-              <div className="rounded-md border border-dashed px-4 py-12 text-center">
-                <CheckCircle2 className="mx-auto h-5 w-5 text-emerald-600" />
-                <div className="mt-2 text-sm font-medium">暂无待同步文档</div>
-                <p className="mt-1 text-xs text-muted-foreground">所有文档都已经完成知识库入库。</p>
+              <div className="mt-3 rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+                当前已索引 {knowledgeIndex.documents.length} 篇文档，共 {knowledgeIndex.chunks.length} 个知识片段。
               </div>
             )}
           </section>
 
-          <aside className="min-w-0">
-            <div className="mb-3 flex items-center gap-2">
-              <History className="h-4 w-4 text-muted-foreground" />
-              <h3 className="text-sm font-semibold">最近同步记录</h3>
-            </div>
+          <div className="grid min-h-0 gap-5 lg:grid-cols-[minmax(0,1fr)_320px]">
+            <section className="min-w-0">
+              <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-semibold">待处理队列</h3>
+                  <p className="mt-1 text-xs text-muted-foreground">未同步、失败、过期和正在同步的文档会出现在这里。</p>
+                </div>
+                <Button size="sm" className="h-8 gap-2" disabled={!syncCandidates.length} onClick={onSyncAll}>
+                  <DatabaseZap className="h-3.5 w-3.5" />
+                  同步全部待处理
+                </Button>
+              </div>
 
-            {logs.length ? (
-              <div className="max-h-[420px] space-y-2 overflow-y-auto pr-1">
-                {logs.slice(0, 12).map((log) => (
-                  <button
-                    key={log.id}
-                    type="button"
-                    className="w-full rounded-md border bg-background p-3 text-left transition-colors hover:bg-accent"
-                    onClick={() => onOpenDocument(log.documentId)}
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="min-w-0 truncate text-sm font-medium">{log.documentTitle}</span>
-                      <LogStatusBadge status={log.status} />
-                    </div>
-                    <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{log.message}</p>
-                    <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
-                      <Clock3 className="h-3.5 w-3.5" />
-                      {formatDateTime(log.createdAt)}
-                    </div>
-                  </button>
-                ))}
+              {queueDocuments.length ? (
+                <div className="max-h-[min(420px,45vh)] overflow-y-auto rounded-md border bg-background">
+                  {queueDocuments.map((document) => {
+                    const indexStale = document.knowledgeStatus === "indexed" && isDocumentKnowledgeIndexStale(document, knowledgeIndex);
+                    const knowledgeStatus = indexStale ? "outdated" : document.knowledgeStatus ?? "none";
+                    const syncing = knowledgeStatus === "pending";
+                    const canSync = knowledgeStatus === "none" || knowledgeStatus === "failed" || knowledgeStatus === "outdated";
+
+                    return (
+                      <div key={document.id} className="flex items-center justify-between gap-3 border-b p-3 last:border-b-0">
+                        <button
+                          type="button"
+                          className="flex min-w-0 flex-1 items-start gap-2 text-left"
+                          onClick={() => onOpenDocument(document.id)}
+                        >
+                          <FileText className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                          <div className="min-w-0">
+                            <div className="truncate text-sm font-medium">{document.title || "无标题"}</div>
+                            <div className="mt-1 line-clamp-1 text-xs text-muted-foreground">
+                              {document.summary || document.contentText || "暂无摘要"}
+                            </div>
+                            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                              <KnowledgeStatusBadge status={knowledgeStatus} />
+                              <span>{formatDateTime(document.updatedAt)}</span>
+                            </div>
+                          </div>
+                        </button>
+
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 shrink-0 gap-1.5"
+                          disabled={!canSync}
+                          onClick={() => onSyncDocument(document.id)}
+                        >
+                          {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <DatabaseZap className="h-3.5 w-3.5" />}
+                          {syncing ? "同步中" : "同步"}
+                        </Button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : (
+                <div className="rounded-md border border-dashed px-4 py-12 text-center">
+                  <CheckCircle2 className="mx-auto h-5 w-5 text-emerald-600" />
+                  <div className="mt-2 text-sm font-medium">暂无待同步文档</div>
+                  <p className="mt-1 text-xs text-muted-foreground">所有文档都已经完成知识库入库。</p>
+                </div>
+              )}
+            </section>
+
+            <aside className="min-w-0">
+              <div className="mb-3 flex items-center gap-2">
+                <History className="h-4 w-4 text-muted-foreground" />
+                <h3 className="text-sm font-semibold">最近同步记录</h3>
               </div>
-            ) : (
-              <div className="rounded-md border border-dashed px-4 py-10 text-center">
-                <History className="mx-auto h-5 w-5 text-muted-foreground" />
-                <div className="mt-2 text-sm font-medium">暂无同步记录</div>
-                <p className="mt-1 text-xs text-muted-foreground">发起同步后，这里会记录任务结果。</p>
-              </div>
-            )}
-          </aside>
+
+              {logs.length ? (
+                <div className="max-h-[min(420px,45vh)] space-y-2 overflow-y-auto pr-1">
+                  {logs.slice(0, 12).map((log) => (
+                    <button
+                      key={log.id}
+                      type="button"
+                      className="w-full rounded-md border bg-background p-3 text-left transition-colors hover:bg-accent"
+                      onClick={() => onOpenDocument(log.documentId)}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="min-w-0 truncate text-sm font-medium">{log.documentTitle}</span>
+                        <LogStatusBadge status={log.status} />
+                      </div>
+                      <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{log.message}</p>
+                      <div className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
+                        <Clock3 className="h-3.5 w-3.5" />
+                        {formatDateTime(log.createdAt)}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-md border border-dashed px-4 py-10 text-center">
+                  <History className="mx-auto h-5 w-5 text-muted-foreground" />
+                  <div className="mt-2 text-sm font-medium">暂无同步记录</div>
+                  <p className="mt-1 text-xs text-muted-foreground">发起同步后，这里会记录任务结果。</p>
+                </div>
+              )}
+            </aside>
+          </div>
+
+          <p className="text-xs leading-5 text-muted-foreground">
+            当前已在浏览器本地完成分块与索引持久化，后续可以替换为向量化、RAG 入库任务和后端任务队列。
+          </p>
         </div>
-
-        <p className="text-xs leading-5 text-muted-foreground">
-          当前已在浏览器本地完成分块与索引持久化，后续可以替换为向量化、RAG 入库任务和后端任务队列。
-        </p>
       </DialogContent>
     </Dialog>
   );
