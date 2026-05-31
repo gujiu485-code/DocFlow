@@ -21,6 +21,7 @@ const createEmbeddings = (config: RagRuntimeConfig): EmbeddingsInterface =>
     apiKey: config.embedding.apiKey,
     baseURL: config.embedding.baseURL,
     model: config.embedding.model,
+    dimensions: config.embedding.dimensions,
     batchSize: config.embedding.batchSize,
   });
 

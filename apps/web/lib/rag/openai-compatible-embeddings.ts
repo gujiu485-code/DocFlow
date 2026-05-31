@@ -14,6 +14,7 @@ export type OpenAICompatibleEmbeddingsConfig = {
   apiKey: string;
   baseURL: string;
   model: string;
+  dimensions?: number;
   batchSize: number;
 };
 
@@ -21,6 +22,7 @@ export class OpenAICompatibleEmbeddings extends Embeddings {
   private readonly apiKey: string;
   private readonly baseURL: string;
   private readonly model: string;
+  private readonly dimensions?: number;
   private readonly batchSize: number;
 
   constructor(config: OpenAICompatibleEmbeddingsConfig) {
@@ -28,6 +30,7 @@ export class OpenAICompatibleEmbeddings extends Embeddings {
     this.apiKey = config.apiKey;
     this.baseURL = config.baseURL;
     this.model = config.model;
+    this.dimensions = config.dimensions;
     this.batchSize = config.batchSize;
   }
 
@@ -57,6 +60,7 @@ export class OpenAICompatibleEmbeddings extends Embeddings {
       body: JSON.stringify({
         model: this.model,
         input,
+        ...(this.dimensions ? { dimensions: this.dimensions } : {}),
       }),
     });
     const payload = (await response.json().catch(() => null)) as EmbeddingResponse | null;
