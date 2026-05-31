@@ -21,6 +21,7 @@ type AskCitation = {
 type AskResponse = {
   answer: string;
   citations: AskCitation[];
+  provider?: "local" | "qdrant" | "pgvector";
 };
 
 interface KnowledgeAskPanelProps {
@@ -44,6 +45,7 @@ export function KnowledgeAskPanel({
   const [asking, setAsking] = useState(false);
   const [answer, setAnswer] = useState("");
   const [citations, setCitations] = useState<AskCitation[]>([]);
+  const [answerProvider, setAnswerProvider] = useState<AskResponse["provider"]>();
   const [error, setError] = useState<string | null>(null);
   const [askedQuestion, setAskedQuestion] = useState("");
   const lastAutoAskKey = useRef<number | null>(null);
@@ -74,6 +76,9 @@ export function KnowledgeAskPanel({
     setAsking(true);
     setError(null);
     setAskedQuestion(nextQuestion);
+    setAnswer("");
+    setCitations([]);
+    setAnswerProvider(undefined);
 
     try {
       const response = await fetch("/api/knowledge/ask", {
@@ -95,9 +100,11 @@ export function KnowledgeAskPanel({
       const normalizedPayload = normalizeAskResponse(payload);
       setAnswer(normalizedPayload.answer);
       setCitations(normalizedPayload.citations);
+      setAnswerProvider(normalizedPayload.provider);
     } catch (err) {
       setAnswer("");
       setCitations([]);
+      setAnswerProvider(undefined);
       setError(err instanceof Error ? err.message : "AI 问答失败，请稍后重试。");
     } finally {
       setAsking(false);
@@ -179,6 +186,7 @@ export function KnowledgeAskPanel({
             <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
               <Sparkles className="h-3.5 w-3.5" />
               回答：{askedQuestion}
+              {answerProvider && <span>来源：{getProviderLabel(answerProvider)}</span>}
             </div>
             <div className="whitespace-pre-wrap text-sm leading-7">{answer}</div>
           </div>
@@ -260,6 +268,10 @@ function normalizeAskResponse(value: unknown): AskResponse {
 
   return {
     answer: typeof record.answer === "string" ? record.answer : "",
+    provider:
+      record.provider === "qdrant" || record.provider === "pgvector" || record.provider === "local"
+        ? record.provider
+        : undefined,
     citations: Array.isArray(record.citations)
       ? record.citations
           .map((item) => {
@@ -282,4 +294,10 @@ function normalizeAskResponse(value: unknown): AskResponse {
           .filter((item): item is AskCitation => Boolean(item))
       : [],
   };
+}
+
+function getProviderLabel(provider: NonNullable<AskResponse["provider"]>) {
+  if (provider === "qdrant") return "LangChain + Qdrant";
+  if (provider === "pgvector") return "LangChain + pgvector";
+  return "本地片段";
 }

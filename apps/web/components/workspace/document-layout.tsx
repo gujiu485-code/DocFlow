@@ -117,6 +117,23 @@ export function DocumentLayout() {
     });
   };
 
+  const deleteDocumentsFromRemoteKnowledge = (documentIds: Iterable<string>) => {
+    const ids = [...documentIds].filter(Boolean);
+    if (!ids.length) return;
+
+    void fetch("/api/knowledge/index", {
+      method: "DELETE",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        documentIds: ids,
+      }),
+    }).catch((error) => {
+      console.error("后端知识库删除失败", error);
+    });
+  };
+
   const snapshotDocument = (document: DocumentItem | undefined, options?: { force?: boolean }) => {
     if (!document) return;
     commitDocumentVersions((current) => addDocumentVersion(current, document, options));
@@ -328,6 +345,7 @@ export function DocumentLayout() {
       { immediate: true },
     );
     commitKnowledgeIndex((current) => removeDocumentsFromKnowledgeIndex(current, idsToDelete));
+    deleteDocumentsFromRemoteKnowledge(idsToDelete);
     setActiveDocumentId(nextActiveDocumentId);
     setExpandedDocumentIds((current) => {
       const next = new Set(current);
@@ -370,6 +388,7 @@ export function DocumentLayout() {
     commitDocuments((current) => current.filter((document) => !idsToDelete.has(document.id)), { immediate: true });
     commitDocumentVersions((current) => removeDocumentVersions(current, idsToDelete));
     commitKnowledgeIndex((current) => removeDocumentsFromKnowledgeIndex(current, idsToDelete));
+    deleteDocumentsFromRemoteKnowledge(idsToDelete);
     setActiveDocumentId(nextActiveDocumentId);
   };
 
@@ -484,26 +503,67 @@ export function DocumentLayout() {
       appendKnowledgeSyncLog(current, createKnowledgeSyncLog(document, "pending", "文档已加入知识库同步队列。")),
     );
 
-    // 第一版在浏览器本地完成分块和索引；后续这里可以替换为真实后端任务队列。
+    // 先保留本地索引用于离线兜底，同时把文档同步到后端 LangChain RAG 引擎。
     window.setTimeout(() => {
-      const payload = buildDocumentKnowledgeIndex(document);
+      void (async () => {
+        const payload = buildDocumentKnowledgeIndex(document);
 
-      if (payload.chunks.length === 0) {
-        setDocumentKnowledgeStatus(documentId, "failed");
-        commitKnowledgeSyncLogs((current) =>
-          appendKnowledgeSyncLog(current, createKnowledgeSyncLog(document, "failed", "同步失败：没有可入库的标题或正文内容。")),
-        );
-        return;
-      }
+        if (payload.chunks.length === 0) {
+          setDocumentKnowledgeStatus(documentId, "failed");
+          commitKnowledgeSyncLogs((current) =>
+            appendKnowledgeSyncLog(current, createKnowledgeSyncLog(document, "failed", "同步失败：没有可入库的标题或正文内容。")),
+          );
+          return;
+        }
 
-      commitKnowledgeIndex((current) => upsertDocumentKnowledgeIndex(current, payload));
-      setDocumentKnowledgeStatus(documentId, "indexed");
-      commitKnowledgeSyncLogs((current) =>
-        appendKnowledgeSyncLog(
-          current,
-          createKnowledgeSyncLog(document, "success", `同步成功：已生成 ${payload.chunks.length} 个知识片段。`),
-        ),
-      );
+        commitKnowledgeIndex((current) => upsertDocumentKnowledgeIndex(current, payload));
+
+        try {
+          const response = await fetch("/api/knowledge/index", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              documents: [document],
+            }),
+          });
+          const remoteResult = await response.json().catch(() => null);
+
+          if (!response.ok) {
+            throw new Error(typeof remoteResult?.error === "string" ? remoteResult.error : "后端 RAG 入库失败。");
+          }
+
+          const remoteMessage =
+            typeof remoteResult?.message === "string"
+              ? remoteResult.message
+              : "后端 RAG 未返回同步详情。";
+
+          setDocumentKnowledgeStatus(documentId, "indexed");
+          commitKnowledgeSyncLogs((current) =>
+            appendKnowledgeSyncLog(
+              current,
+              createKnowledgeSyncLog(
+                document,
+                "success",
+                `同步成功：本地生成 ${payload.chunks.length} 个知识片段。${remoteMessage}`,
+              ),
+            ),
+          );
+        } catch (error) {
+          setDocumentKnowledgeStatus(documentId, "failed");
+          commitKnowledgeSyncLogs((current) =>
+            appendKnowledgeSyncLog(
+              current,
+              createKnowledgeSyncLog(
+                document,
+                "failed",
+                error instanceof Error ? error.message : "同步失败：后端 RAG 入库异常。",
+              ),
+            ),
+          );
+        }
+      })();
     }, 900);
   };
 

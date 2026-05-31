@@ -1,7 +1,9 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { generateText, type CoreMessage } from "ai";
+import { retrieveFromLangChainRag } from "@/lib/rag/langchain-engine";
+import type { RagProvider } from "@/lib/rag/types";
 
-export const runtime = "edge";
+export const runtime = "nodejs";
 
 type AskContextChunk = {
   id: string;
@@ -18,6 +20,8 @@ type AskCitation = {
   headingPath: string[];
   quote: string;
 };
+
+type AskContextSource = "local" | Exclude<RagProvider, "local">;
 
 const clampText = (value: unknown, maxLength: number) =>
   typeof value === "string" ? value.trim().slice(0, maxLength) : "";
@@ -59,6 +63,27 @@ const createCitations = (chunks: AskContextChunk[]): AskCitation[] =>
     quote: chunk.text.slice(0, 180),
   }));
 
+const retrieveBackendChunks = async (question: string): Promise<{ chunks: AskContextChunk[]; source: AskContextSource }> => {
+  try {
+    const chunks = await retrieveFromLangChainRag(question);
+    if (!chunks.length) return { chunks: [], source: "local" };
+
+    return {
+      source: chunks[0]?.provider ?? "local",
+      chunks: chunks.map((chunk) => ({
+        id: chunk.id,
+        documentId: chunk.documentId,
+        documentTitle: chunk.documentTitle,
+        headingPath: chunk.headingPath,
+        text: chunk.text,
+      })),
+    };
+  } catch (error) {
+    console.error("LangChain RAG 检索失败，降级使用前端传入片段。", error);
+    return { chunks: [], source: "local" };
+  }
+};
+
 export async function POST(req: Request): Promise<Response> {
   if (!process.env.DEEPSEEK_API_KEY || process.env.DEEPSEEK_API_KEY === "") {
     return Response.json({ error: "缺少 DEEPSEEK_API_KEY，请在 .env 文件中配置。" }, { status: 400 });
@@ -66,11 +91,15 @@ export async function POST(req: Request): Promise<Response> {
 
   const body = await req.json();
   const question = clampText(body.question, 500);
-  const chunks = normalizeContextChunks(body.chunks);
+  const fallbackChunks = normalizeContextChunks(body.chunks);
 
   if (!question) {
     return Response.json({ error: "请输入问题。" }, { status: 400 });
   }
+
+  const backendResult = await retrieveBackendChunks(question);
+  const chunks = backendResult.chunks.length ? backendResult.chunks : fallbackChunks;
+  const contextSource = backendResult.chunks.length ? backendResult.source : "local";
 
   if (!chunks.length) {
     return Response.json({ error: "没有可用于回答的知识片段，请先同步知识库。" }, { status: 400 });
@@ -124,5 +153,6 @@ export async function POST(req: Request): Promise<Response> {
   return Response.json({
     answer: result.text.trim(),
     citations: createCitations(chunks),
+    provider: contextSource,
   });
 }

@@ -40,7 +40,7 @@ export async function POST(req: Request): Promise<Response> {
     // 如果配置了 Vercel KV，就按 IP 做限流，防止公开 demo 被刷接口。
     const ip = req.headers.get("x-forwarded-for");
     const ratelimit = new Ratelimit({
-      redis: kv,
+      redis: kv as unknown as ConstructorParameters<typeof Ratelimit>[0]["redis"],
       limiter: Ratelimit.slidingWindow(50, "1 d"),
     });
 

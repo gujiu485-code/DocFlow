@@ -1,4 +1,5 @@
 import TailwindAdvancedEditor, { type EditorChangePayload } from "@/components/tailwind/advanced-editor";
+import { DocumentExportMenu } from "@/components/workspace/document-export-menu";
 import { DocumentRightPanel } from "@/components/workspace/document-right-panel";
 import { DocumentTitleInput } from "@/components/workspace/document-title-input";
 import { DocumentVersionHistory } from "@/components/workspace/document-version-history";
@@ -47,6 +48,7 @@ export function DocumentEditorPage({
     <main className="flex h-screen min-w-0 flex-1 bg-background">
       <div className="relative min-w-0 flex-1 overflow-y-auto">
         <div className="absolute right-6 top-5 z-20 flex items-center gap-2">
+          <DocumentExportMenu document={document} />
           {!isDraft && (
             <>
               {onRestoreVersion && (
