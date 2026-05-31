@@ -50,7 +50,6 @@ import {
   createDraftDocument,
   getDescendantDocumentIds,
   getChildDocuments,
-  loadActiveDocumentId,
   loadDocuments,
   loadExpandedDocumentIds,
   isDraftDocumentEmpty,
@@ -68,6 +67,7 @@ import { useEffect, useMemo, useState } from "react";
 import { arrayMove } from "@dnd-kit/sortable";
 
 export function DocumentLayout() {
+  const [workspaceReady, setWorkspaceReady] = useState(false);
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
   const [expandedDocumentIds, setExpandedDocumentIds] = useState<Set<string>>(new Set());
@@ -124,19 +124,15 @@ export function DocumentLayout() {
 
   useEffect(() => {
     const loadedDocuments = loadDocuments();
-    const loadedActiveId = loadActiveDocumentId();
     const loadedExpandedIds = loadExpandedDocumentIds();
-    const availableDocuments = loadedDocuments.filter((document) => !document.deletedAt);
-    const nextActiveId = loadedActiveId && availableDocuments.some((document) => document.id === loadedActiveId)
-      ? loadedActiveId
-      : null;
 
     setDocuments(loadedDocuments);
-    setActiveDocumentId(nextActiveId);
+    setActiveDocumentId(null);
     setExpandedDocumentIds(loadedExpandedIds);
     setDocumentVersions(loadDocumentVersions());
     setKnowledgeSyncLogs(loadKnowledgeSyncLogs());
     setKnowledgeIndex(loadKnowledgeIndex());
+    setWorkspaceReady(true);
   }, []);
 
   useEffect(() => {
@@ -583,6 +579,14 @@ export function DocumentLayout() {
   const updateDraftTitle = (title: string) => {
     setDraftDocument((current) => (current ? { ...current, title } : current));
   };
+
+  if (!workspaceReady) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background text-foreground">
+        <div className="text-sm text-muted-foreground">正在打开 DocFlow AI...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="flex min-h-screen bg-background text-foreground">

@@ -1,12 +1,45 @@
-import { FileText, HelpCircle, Languages, ListChecks, RefreshCcwDot, ShieldAlert, Sparkles } from "lucide-react";
+import { FileText, HelpCircle, Languages, ListChecks, PenLine, RefreshCcwDot, ShieldAlert, Sparkles, Wand2 } from "lucide-react";
 import { useEditor } from "novel";
 import { CommandGroup, CommandItem, CommandSeparator } from "../ui/command";
 
-const options = [
+const rewriteOptions = [
+  {
+    value: "improve",
+    label: "润色选区",
+    description: "更顺畅、专业，保留原意",
+    icon: Wand2,
+  },
+  {
+    value: "simplify",
+    label: "精简表达",
+    description: "去掉废话，保留关键信息",
+    icon: PenLine,
+  },
+  {
+    value: "expand",
+    label: "适度扩写",
+    description: "补充背景和行动，不编造事实",
+    icon: Sparkles,
+  },
+  {
+    value: "formal",
+    label: "改为正式语气",
+    description: "更适合企业文档和汇报",
+    icon: RefreshCcwDot,
+  },
+  {
+    value: "translate",
+    label: "翻译成英文",
+    description: "商务英文，直接替换可用",
+    icon: Languages,
+  },
+];
+
+const analysisOptions = [
   {
     value: "summary",
-    label: "总结文档",
-    description: "提炼核心结论、关键要点和建议",
+    label: "总结内容",
+    description: "核心结论、关键要点、后续建议",
     icon: FileText,
   },
   {
@@ -18,26 +51,14 @@ const options = [
   {
     value: "faq",
     label: "生成 FAQ",
-    description: "面向团队成员生成常见问答",
+    description: "生成问题和回答，适合知识库",
     icon: HelpCircle,
-  },
-  {
-    value: "formal",
-    label: "优化为正式表达",
-    description: "改成更清晰克制的企业文档语气",
-    icon: RefreshCcwDot,
   },
   {
     value: "risks",
     label: "检查风险点",
     description: "发现责任、时间、流程和合规风险",
     icon: ShieldAlert,
-  },
-  {
-    value: "translate",
-    label: "翻译成英文",
-    description: "保留结构，生成商务英文版本",
-    icon: Languages,
   },
 ];
 
@@ -61,18 +82,40 @@ const AISelectorCommands = ({ onSelect }: AISelectorCommandsProps) => {
 
   return (
     <>
-      <CommandGroup heading="快捷操作" className="px-2 py-2">
-        {options.map((option) => (
+      <CommandGroup heading="改写选区" className="px-2 py-2">
+        {rewriteOptions.map((option) => (
           <CommandItem
             onSelect={() => {
               onSelect(getTargetMarkdown(), option.value);
             }}
-            className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-accent"
+            className="flex items-start gap-2 rounded-md px-2 py-1.5 hover:bg-accent"
             key={option.value}
             value={option.value}
           >
-            <option.icon className="h-4 w-4 text-purple-500" />
-            <span className="text-sm">{option.label}</span>
+            <option.icon className="mt-0.5 h-4 w-4 text-purple-500" />
+            <span className="min-w-0">
+              <span className="block text-sm">{option.label}</span>
+              <span className="block truncate text-xs text-muted-foreground">{option.description}</span>
+            </span>
+          </CommandItem>
+        ))}
+      </CommandGroup>
+      <CommandSeparator />
+      <CommandGroup heading="分析生成" className="px-2 py-2">
+        {analysisOptions.map((option) => (
+          <CommandItem
+            onSelect={() => {
+              onSelect(getTargetMarkdown(), option.value);
+            }}
+            className="flex items-start gap-2 rounded-md px-2 py-1.5 hover:bg-accent"
+            key={option.value}
+            value={option.value}
+          >
+            <option.icon className="mt-0.5 h-4 w-4 text-purple-500" />
+            <span className="min-w-0">
+              <span className="block text-sm">{option.label}</span>
+              <span className="block truncate text-xs text-muted-foreground">{option.description}</span>
+            </span>
           </CommandItem>
         ))}
       </CommandGroup>

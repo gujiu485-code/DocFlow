@@ -5,8 +5,7 @@ import { Command } from "@/components/tailwind/ui/command";
 import { useCompletion } from "ai/react";
 import { Bot, Send, X } from "lucide-react";
 import { addAIHighlight, useEditor } from "novel";
-import { useState } from "react";
-import Markdown from "react-markdown";
+import { useMemo, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "../ui/button";
 import CrazySpinner from "../ui/icons/crazy-spinner";
@@ -40,6 +39,13 @@ export function AISelector({ onOpenChange }: AISelectorProps) {
 
   const hasCompletion = completion.length > 0;
   const hasInput = inputValue.trim().length > 0;
+  const selectedText = useMemo(() => {
+    const { from, to, empty } = editor.state.selection;
+    if (empty) return "";
+    return editor.state.doc.textBetween(from, to, "\n").trim();
+  }, [editor.state.selection.from, editor.state.selection.to]);
+  const scopeLabel = selectedText ? `已选中 ${selectedText.length} 字` : "未选中文本，将处理全文";
+  const previewText = selectedText || editor.getText().trim();
 
   const getTargetMarkdown = () => {
     const { empty } = editor.state.selection;
@@ -79,7 +85,7 @@ export function AISelector({ onOpenChange }: AISelectorProps) {
           </div>
           <div>
             <div className="text-sm font-semibold">DocFlow AI</div>
-            <div className="text-xs text-muted-foreground">处理选区或全文</div>
+            <div className="text-xs text-muted-foreground">{scopeLabel}</div>
           </div>
         </div>
         <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => onOpenChange(false)}>
@@ -90,8 +96,8 @@ export function AISelector({ onOpenChange }: AISelectorProps) {
       <div className="border-b bg-muted/20">
         {hasCompletion ? (
           <ScrollArea className="max-h-[220px]">
-            <div className="prose prose-sm max-w-none p-3 dark:prose-invert">
-              <Markdown>{completion}</Markdown>
+            <div className="whitespace-pre-wrap p-3 text-sm leading-6">
+              {completion}
             </div>
           </ScrollArea>
         ) : isLoading ? (
@@ -103,13 +109,24 @@ export function AISelector({ onOpenChange }: AISelectorProps) {
             </div>
           </div>
         ) : (
-          <div className="px-3 py-2 text-xs text-muted-foreground">选择快捷操作，或输入自定义指令。</div>
+          <div className="space-y-2 px-3 py-2">
+            <div className="text-xs text-muted-foreground">选择快捷操作，或输入自定义指令。</div>
+            {previewText && (
+              <div className="line-clamp-2 rounded-md bg-background px-2 py-1.5 text-xs leading-5 text-muted-foreground">
+                {previewText}
+              </div>
+            )}
+          </div>
         )}
       </div>
 
       {hasCompletion ? (
         <AICompletionCommands
           onDiscard={() => {
+            editor.chain().unsetHighlight().focus().run();
+            onOpenChange(false);
+          }}
+          onApply={() => {
             editor.chain().unsetHighlight().focus().run();
             onOpenChange(false);
           }}
@@ -126,13 +143,13 @@ export function AISelector({ onOpenChange }: AISelectorProps) {
             onChange={(event) => setInputValue(event.target.value)}
             onFocus={() => addAIHighlight(editor)}
             onKeyDown={(event) => {
-              if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+              if (event.key === "Enter") {
                 event.preventDefault();
                 handleCustomSubmit();
               }
             }}
             className="h-9 flex-1 rounded-md border bg-background px-3 text-sm outline-none placeholder:text-muted-foreground focus:ring-2 focus:ring-purple-500/30"
-            placeholder={hasCompletion ? "继续处理结果..." : "输入指令..."}
+            placeholder={hasCompletion ? "继续处理结果..." : "输入指令，回车发送"}
           />
           <Button
             size="icon"

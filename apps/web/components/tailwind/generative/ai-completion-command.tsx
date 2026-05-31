@@ -3,14 +3,28 @@ import { useEditor } from "novel";
 import { Check, Clipboard, TextQuote, TrashIcon } from "lucide-react";
 import { toast } from "sonner";
 
+const cleanCompletionForEditor = (value: string) =>
+  value
+    .replace(/^```[\w-]*\s*/g, "")
+    .replace(/```$/g, "")
+    .replace(/^\s{0,3}#{1,6}\s+/gm, "")
+    .replace(/^\s{0,3}[-*+]\s+/gm, "")
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/__(.*?)__/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .trim();
+
 const AICompletionCommands = ({
   completion,
   onDiscard,
+  onApply,
 }: {
   completion: string;
   onDiscard: () => void;
+  onApply?: () => void;
 }) => {
   const { editor } = useEditor();
+  const cleanedCompletion = cleanCompletionForEditor(completion);
   return (
     <>
       <CommandGroup>
@@ -29,9 +43,10 @@ const AICompletionCommands = ({
                   from: selection.from,
                   to: selection.to,
                 },
-                completion,
+                cleanedCompletion,
               )
               .run();
+            onApply?.();
           }}
         >
           <Check className="h-4 w-4 text-muted-foreground" />
@@ -46,8 +61,9 @@ const AICompletionCommands = ({
             editor
               .chain()
               .focus()
-              .insertContentAt(selection.to + 1, completion)
+              .insertContentAt(selection.to, `\n\n${cleanedCompletion}`)
               .run();
+            onApply?.();
           }}
         >
           <TextQuote className="h-4 w-4 text-muted-foreground" />
