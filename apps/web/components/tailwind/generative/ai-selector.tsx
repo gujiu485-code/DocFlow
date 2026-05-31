@@ -19,9 +19,35 @@ interface AISelectorProps {
   onOpenChange: (open: boolean) => void;
 }
 
+type AIRequestState = {
+  prompt: string;
+  option: string;
+  command?: string;
+  sourceText: string;
+  selectionRange: { from: number; to: number };
+};
+
+const replaceFirstOptions = new Set(["improve", "simplify", "expand", "formal", "translate", "zap"]);
+
+const getOptionLabel = (option?: string) => {
+  if (option === "improve") return "润色选区";
+  if (option === "simplify") return "精简表达";
+  if (option === "expand") return "适度扩写";
+  if (option === "formal") return "正式语气";
+  if (option === "translate") return "翻译";
+  if (option === "summary") return "总结";
+  if (option === "todos") return "待办";
+  if (option === "faq") return "FAQ";
+  if (option === "risks") return "风险检查";
+  if (option === "continue") return "续写";
+  if (option === "zap") return "自定义";
+  return "AI 建议";
+};
+
 export function AISelector({ onOpenChange }: AISelectorProps) {
   const { editor } = useEditor();
   const [inputValue, setInputValue] = useState("");
+  const [lastRequest, setLastRequest] = useState<AIRequestState | null>(null);
 
   // useCompletion 来自 Vercel AI SDK，负责请求 /api/generate 并接收流式生成结果。
   // complete(text, { body: { option } }) 会把选中文本和操作类型发送到后端。
@@ -58,6 +84,26 @@ export function AISelector({ onOpenChange }: AISelectorProps) {
     return editor.storage.markdown.serializer.serialize(slice.content);
   };
 
+  const runCompletion = (prompt: string, option: string, command?: string) => {
+    const selection = editor.state.selection;
+    const sourceText = selectedText || editor.getText().trim() || prompt;
+    const requestState: AIRequestState = {
+      prompt,
+      option,
+      command,
+      sourceText,
+      selectionRange: {
+        from: selection.from,
+        to: selection.to,
+      },
+    };
+
+    setLastRequest(requestState);
+    return complete(prompt, {
+      body: { option, command },
+    });
+  };
+
   const handleCustomSubmit = () => {
     if (!hasInput) {
       toast.error("请输入要让 AI 执行的指令");
@@ -65,19 +111,22 @@ export function AISelector({ onOpenChange }: AISelectorProps) {
     }
 
     if (completion) {
-      complete(completion, {
-        body: { option: "zap", command: inputValue },
-      }).then(() => setInputValue(""));
+      runCompletion(completion, "zap", inputValue).then(() => setInputValue(""));
       return;
     }
 
-    complete(getTargetMarkdown(), {
-      body: { option: "zap", command: inputValue },
-    }).then(() => setInputValue(""));
+    runCompletion(getTargetMarkdown(), "zap", inputValue).then(() => setInputValue(""));
   };
 
+  const regenerate = () => {
+    if (!lastRequest) return;
+    runCompletion(lastRequest.prompt, lastRequest.option, lastRequest.command);
+  };
+
+  const preferredAction = lastRequest && replaceFirstOptions.has(lastRequest.option) ? "replace" : "insert";
+
   return (
-    <Command className="w-[360px] max-w-[calc(100vw-2rem)] rounded-lg border bg-background shadow-xl">
+    <Command className="w-[520px] max-w-[calc(100vw-2rem)] rounded-lg border bg-background shadow-xl">
       <div className="flex items-center justify-between border-b px-3 py-2">
         <div className="flex items-center gap-2">
           <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-purple-100 text-purple-600 dark:bg-purple-950">
@@ -95,9 +144,23 @@ export function AISelector({ onOpenChange }: AISelectorProps) {
 
       <div className="border-b bg-muted/20">
         {hasCompletion ? (
-          <ScrollArea className="max-h-[220px]">
-            <div className="whitespace-pre-wrap p-3 text-sm leading-6">
-              {completion}
+          <ScrollArea className="max-h-[320px]">
+            <div className="grid gap-3 p-3 sm:grid-cols-2">
+              <div className="min-w-0 rounded-md border bg-background p-2">
+                <div className="mb-1 text-xs font-medium text-muted-foreground">原文</div>
+                <div className="max-h-44 overflow-y-auto whitespace-pre-wrap text-xs leading-5 text-muted-foreground">
+                  {lastRequest?.sourceText || previewText || "暂无原文"}
+                </div>
+              </div>
+              <div className="min-w-0 rounded-md border bg-background p-2">
+                <div className="mb-1 flex items-center justify-between gap-2 text-xs font-medium text-muted-foreground">
+                  <span>{getOptionLabel(lastRequest?.option)}</span>
+                  <span>{preferredAction === "replace" ? "建议替换" : "建议插入"}</span>
+                </div>
+                <div className="max-h-44 overflow-y-auto whitespace-pre-wrap text-sm leading-6">
+                  {completion}
+                </div>
+              </div>
             </div>
           </ScrollArea>
         ) : isLoading ? (
@@ -130,10 +193,13 @@ export function AISelector({ onOpenChange }: AISelectorProps) {
             editor.chain().unsetHighlight().focus().run();
             onOpenChange(false);
           }}
+          onRegenerate={regenerate}
+          preferredAction={preferredAction}
+          selectionRange={lastRequest?.selectionRange}
           completion={completion}
         />
       ) : (
-        <AISelectorCommands onSelect={(value, option) => complete(value, { body: { option } })} />
+        <AISelectorCommands onSelect={(value, option) => runCompletion(value, option)} />
       )}
 
       <div className="border-t p-2">

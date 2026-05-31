@@ -1,6 +1,6 @@
 import { CommandGroup, CommandItem, CommandSeparator } from "../ui/command";
 import { useEditor } from "novel";
-import { Check, Clipboard, TextQuote, TrashIcon } from "lucide-react";
+import { Check, Clipboard, RotateCcw, TextQuote, TrashIcon } from "lucide-react";
 import { toast } from "sonner";
 
 const cleanCompletionForEditor = (value: string) =>
@@ -18,13 +18,24 @@ const AICompletionCommands = ({
   completion,
   onDiscard,
   onApply,
+  onRegenerate,
+  preferredAction = "replace",
+  selectionRange,
 }: {
   completion: string;
   onDiscard: () => void;
   onApply?: () => void;
+  onRegenerate?: () => void;
+  preferredAction?: "replace" | "insert";
+  selectionRange?: { from: number; to: number };
 }) => {
   const { editor } = useEditor();
   const cleanedCompletion = cleanCompletionForEditor(completion);
+  const selection = selectionRange ?? editor.view.state.selection;
+
+  const replaceLabel = preferredAction === "replace" ? "替换选区（推荐）" : "替换选区";
+  const insertLabel = preferredAction === "insert" ? "插入到下方（推荐）" : "插入到下方";
+
   return (
     <>
       <CommandGroup>
@@ -32,8 +43,6 @@ const AICompletionCommands = ({
           className="gap-2 px-4"
           value="replace"
           onSelect={() => {
-            const selection = editor.view.state.selection;
-
             // Replace selection：用 AI 结果覆盖当前选中的文本，适合“润色/修正”场景。
             editor
               .chain()
@@ -50,13 +59,12 @@ const AICompletionCommands = ({
           }}
         >
           <Check className="h-4 w-4 text-muted-foreground" />
-          替换选区
+          {replaceLabel}
         </CommandItem>
         <CommandItem
           className="gap-2 px-4"
           value="insert"
           onSelect={() => {
-            const selection = editor.view.state.selection;
             // Insert below：把 AI 结果插入到选区后方，适合“续写/生成补充内容”场景。
             editor
               .chain()
@@ -67,8 +75,14 @@ const AICompletionCommands = ({
           }}
         >
           <TextQuote className="h-4 w-4 text-muted-foreground" />
-          插入到下方
+          {insertLabel}
         </CommandItem>
+        {onRegenerate && (
+          <CommandItem className="gap-2 px-4" value="regenerate" onSelect={onRegenerate}>
+            <RotateCcw className="h-4 w-4 text-muted-foreground" />
+            重新生成
+          </CommandItem>
+        )}
         <CommandItem
           className="gap-2 px-4"
           value="copy"
