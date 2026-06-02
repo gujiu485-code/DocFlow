@@ -11,6 +11,8 @@ type AskContextChunk = {
   documentTitle: string;
   headingPath: string[];
   text: string;
+  score?: number;
+  snippet?: string;
 };
 
 type AskCitation = {
@@ -22,6 +24,16 @@ type AskCitation = {
 };
 
 type AskContextSource = "local" | Exclude<RagProvider, "local">;
+
+type AskRetrievedChunk = {
+  chunkId: string;
+  documentId: string;
+  documentTitle: string;
+  headingPath: string[];
+  text: string;
+  score: number | null;
+  provider: AskContextSource;
+};
 
 const clampText = (value: unknown, maxLength: number) =>
   typeof value === "string" ? value.trim().slice(0, maxLength) : "";
@@ -40,7 +52,7 @@ const normalizeContextChunks = (value: unknown): AskContextChunk[] => {
 
       if (!id || !documentId || !text) return null;
 
-      return {
+      const chunk: AskContextChunk = {
         id,
         documentId,
         documentTitle,
@@ -48,7 +60,11 @@ const normalizeContextChunks = (value: unknown): AskContextChunk[] => {
           ? record.headingPath.filter((heading): heading is string => typeof heading === "string").slice(0, 6)
           : [],
         text,
+        score: typeof record.score === "number" && Number.isFinite(record.score) ? record.score : undefined,
+        snippet: clampText(record.snippet, 300),
       };
+
+      return chunk;
     })
     .filter((item): item is AskContextChunk => Boolean(item))
     .slice(0, 6);
@@ -61,6 +77,17 @@ const createCitations = (chunks: AskContextChunk[]): AskCitation[] =>
     documentTitle: chunk.documentTitle,
     headingPath: chunk.headingPath ?? [],
     quote: chunk.text.slice(0, 180),
+  }));
+
+const createRetrievedChunks = (chunks: AskContextChunk[], provider: AskContextSource): AskRetrievedChunk[] =>
+  chunks.map((chunk) => ({
+    chunkId: chunk.id,
+    documentId: chunk.documentId,
+    documentTitle: chunk.documentTitle,
+    headingPath: chunk.headingPath ?? [],
+    text: (chunk.snippet || chunk.text).slice(0, 900),
+    score: typeof chunk.score === "number" ? chunk.score : null,
+    provider,
   }));
 
 const retrieveBackendChunks = async (question: string): Promise<{ chunks: AskContextChunk[]; source: AskContextSource }> => {
@@ -76,6 +103,8 @@ const retrieveBackendChunks = async (question: string): Promise<{ chunks: AskCon
         documentTitle: chunk.documentTitle,
         headingPath: chunk.headingPath,
         text: chunk.text,
+        score: chunk.score,
+        snippet: chunk.text.slice(0, 300),
       })),
     };
   } catch (error) {
@@ -154,5 +183,6 @@ export async function POST(req: Request): Promise<Response> {
     answer: result.text.trim(),
     citations: createCitations(chunks),
     provider: contextSource,
+    retrievedChunks: createRetrievedChunks(chunks, contextSource),
   });
 }

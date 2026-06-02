@@ -4,8 +4,10 @@ import { DocumentRightPanel } from "@/components/workspace/document-right-panel"
 import { DocumentTitleInput } from "@/components/workspace/document-title-input";
 import { DocumentVersionHistory } from "@/components/workspace/document-version-history";
 import { SaveStatus } from "@/components/workspace/save-status";
+import { Button } from "@/components/tailwind/ui/button";
 import type { DocumentVersion } from "@/lib/document-versions";
 import type { DocumentItem, DocumentMetaUpdate, DraftDocument, SaveStatusValue } from "@/lib/documents";
+import { Maximize2 } from "lucide-react";
 
 interface DocumentEditorPageProps {
   document: DocumentItem | DraftDocument;
@@ -13,6 +15,7 @@ interface DocumentEditorPageProps {
   onTitleChange: (title: string) => void;
   onContentChange: (documentId: string, payload: EditorChangePayload) => void;
   isDraft?: boolean;
+  onBack?: () => void;
   versions?: DocumentVersion[];
   onRestoreVersion?: (versionId: string) => void;
   onMetaChange?: (documentId: string, updates: DocumentMetaUpdate) => void;
@@ -28,6 +31,7 @@ export function DocumentEditorPage({
   onTitleChange,
   onContentChange,
   isDraft = false,
+  onBack,
   versions = [],
   onRestoreVersion,
   onMetaChange,
@@ -46,10 +50,24 @@ export function DocumentEditorPage({
       <div className="relative min-w-0 flex-1 overflow-y-auto">
         <div className="sticky top-0 z-30 border-b bg-background/95 px-4 py-3 backdrop-blur supports-[backdrop-filter]:bg-background/80 sm:px-6">
           <div className="mx-auto flex max-w-5xl items-center justify-between gap-3">
-            <div className="min-w-0">
-              <div className="truncate text-sm font-medium">{isDraft ? "正在新建页面" : titleLabel}</div>
-              <div className="truncate text-xs text-muted-foreground">
-                {isDraft ? "输入标题或正文后会保存为文档，可从左侧工作台退出" : "文档编辑"}
+            <div className="flex min-w-0 items-center gap-2">
+              {isDraft && onBack && (
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8 shrink-0 text-muted-foreground hover:text-foreground"
+                  onClick={() => onBack()}
+                  title="完成新建"
+                >
+                  <Maximize2 className="h-4 w-4" />
+                  <span className="sr-only">完成新建</span>
+                </Button>
+              )}
+              <div className="min-w-0">
+                <div className="truncate text-sm font-medium">{isDraft ? "正在新建页面" : titleLabel}</div>
+                <div className="truncate text-xs text-muted-foreground">
+                  {isDraft ? "点击左上角按钮完成新建；空白草稿会自动丢弃" : "文档编辑"}
+                </div>
               </div>
             </div>
 

@@ -9,7 +9,7 @@ import {
   DialogTitle,
 } from "@/components/tailwind/ui/dialog";
 import { KnowledgeStatusBadge } from "@/components/workspace/knowledge-status-badge";
-import type { DocumentItem } from "@/lib/documents";
+import type { DocumentItem, KnowledgeStatus } from "@/lib/documents";
 import {
   isDocumentKnowledgeIndexStale,
   searchKnowledgeChunks,
@@ -57,27 +57,29 @@ export function KnowledgeSyncCenter({
     () =>
       documents
         .filter((document) => {
-          const knowledgeStatus = document.knowledgeStatus ?? "none";
+          const knowledgeStatus = getEffectiveKnowledgeStatus(document, knowledgeIndex);
           if (["pending", "none", "outdated", "failed"].includes(knowledgeStatus)) return true;
-          return knowledgeStatus === "indexed" && isDocumentKnowledgeIndexStale(document, knowledgeIndex);
+          return false;
         })
         .sort((a, b) => {
-          const priority: Record<string, number> = {
+          const priority: Record<KnowledgeStatus, number> = {
             pending: 0,
             failed: 1,
             outdated: 2,
             none: 3,
+            indexed: 4,
           };
-          const statusDiff = priority[a.knowledgeStatus ?? "none"] - priority[b.knowledgeStatus ?? "none"];
+          const statusDiff =
+            priority[getEffectiveKnowledgeStatus(a, knowledgeIndex)] - priority[getEffectiveKnowledgeStatus(b, knowledgeIndex)];
           if (statusDiff !== 0) return statusDiff;
           return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
         }),
     [documents, knowledgeIndex],
   );
 
-  const pendingCount = documents.filter((document) => document.knowledgeStatus === "pending").length;
-  const indexedCount = documents.filter((document) => document.knowledgeStatus === "indexed").length;
-  const failedCount = documents.filter((document) => document.knowledgeStatus === "failed").length;
+  const pendingCount = documents.filter((document) => getEffectiveKnowledgeStatus(document, knowledgeIndex) === "pending").length;
+  const indexedCount = documents.filter((document) => getEffectiveKnowledgeStatus(document, knowledgeIndex) === "indexed").length;
+  const failedCount = documents.filter((document) => getEffectiveKnowledgeStatus(document, knowledgeIndex) === "failed").length;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -163,8 +165,7 @@ export function KnowledgeSyncCenter({
               {queueDocuments.length ? (
                 <div className="max-h-[min(420px,45vh)] overflow-y-auto rounded-md border bg-background">
                   {queueDocuments.map((document) => {
-                    const indexStale = document.knowledgeStatus === "indexed" && isDocumentKnowledgeIndexStale(document, knowledgeIndex);
-                    const knowledgeStatus = indexStale ? "outdated" : document.knowledgeStatus ?? "none";
+                    const knowledgeStatus = getEffectiveKnowledgeStatus(document, knowledgeIndex);
                     const syncing = knowledgeStatus === "pending";
                     const canSync = knowledgeStatus === "none" || knowledgeStatus === "failed" || knowledgeStatus === "outdated";
 
@@ -294,4 +295,20 @@ function formatDateTime(value: string) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function getEffectiveKnowledgeStatus(document: DocumentItem, knowledgeIndex: KnowledgeIndexStore): KnowledgeStatus {
+  const knowledgeStatus = document.knowledgeStatus ?? "none";
+
+  if (knowledgeStatus === "indexed") {
+    return isDocumentKnowledgeIndexStale(document, knowledgeIndex) ? "outdated" : "indexed";
+  }
+
+  if (knowledgeStatus !== "pending") return knowledgeStatus;
+
+  if (!isDocumentKnowledgeIndexStale(document, knowledgeIndex)) return "indexed";
+
+  const pendingSince = new Date(document.updatedAt).getTime();
+  const pendingStillFresh = Number.isFinite(pendingSince) && Date.now() - pendingSince < 30_000;
+  return pendingStillFresh ? "pending" : "outdated";
 }

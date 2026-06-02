@@ -32,6 +32,7 @@ import {
 import {
   buildDocumentKnowledgeIndex,
   createEmptyKnowledgeIndex,
+  isDocumentKnowledgeIndexStale,
   loadKnowledgeIndex,
   removeDocumentsFromKnowledgeIndex,
   saveKnowledgeIndex,
@@ -140,15 +141,34 @@ export function DocumentLayout() {
   };
 
   useEffect(() => {
+    const loadedKnowledgeIndex = loadKnowledgeIndex();
     const loadedDocuments = loadDocuments();
+    let recoveredPendingStatus = false;
+    const recoveredDocuments = loadedDocuments.map((document) => {
+      if (document.knowledgeStatus !== "pending") return document;
+      const knowledgeStatus: DocumentItem["knowledgeStatus"] = isDocumentKnowledgeIndexStale(document, loadedKnowledgeIndex)
+        ? "outdated"
+        : "indexed";
+
+      recoveredPendingStatus = true;
+      return {
+        ...document,
+        // pending 是前端临时任务状态，刷新后没有后台任务可恢复；根据本地索引是否最新恢复成已入库或待同步。
+        knowledgeStatus,
+      };
+    });
     const loadedExpandedIds = loadExpandedDocumentIds();
 
-    setDocuments(loadedDocuments);
+    if (recoveredPendingStatus) {
+      saveDocuments(recoveredDocuments);
+    }
+
+    setDocuments(recoveredDocuments);
     setActiveDocumentId(null);
     setExpandedDocumentIds(loadedExpandedIds);
     setDocumentVersions(loadDocumentVersions());
     setKnowledgeSyncLogs(loadKnowledgeSyncLogs());
-    setKnowledgeIndex(loadKnowledgeIndex());
+    setKnowledgeIndex(loadedKnowledgeIndex);
     setWorkspaceReady(true);
   }, []);
 
@@ -496,7 +516,20 @@ export function DocumentLayout() {
 
   const syncDocumentToKnowledge = (documentId: string) => {
     const document = visibleDocuments.find((item) => item.id === documentId);
-    if (!document || document.knowledgeStatus === "pending") return;
+    if (!document) return;
+
+    if (document.knowledgeStatus === "pending") {
+      const pendingAlreadyIndexed = !isDocumentKnowledgeIndexStale(document, knowledgeIndex);
+      const pendingSince = new Date(document.updatedAt).getTime();
+      const pendingStillFresh = Number.isFinite(pendingSince) && Date.now() - pendingSince < 30_000;
+
+      if (pendingAlreadyIndexed) {
+        setDocumentKnowledgeStatus(documentId, "indexed");
+        return;
+      }
+
+      if (pendingStillFresh) return;
+    }
 
     setDocumentKnowledgeStatus(documentId, "pending");
     commitKnowledgeSyncLogs((current) =>
@@ -678,6 +711,7 @@ export function DocumentLayout() {
           document={activeDraftDocument}
           saveStatus={saveStatus}
           isDraft
+          onBack={commitDraftDocument}
           onTitleChange={updateDraftTitle}
           onContentChange={updateDocumentContent}
         />
