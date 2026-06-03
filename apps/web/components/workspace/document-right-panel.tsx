@@ -3,6 +3,7 @@
 import { DocumentOutline } from "@/components/workspace/document-outline";
 import { DocumentPropertiesPanel } from "@/components/workspace/document-properties-panel";
 import type { DocumentItem, DocumentMetaUpdate } from "@/lib/documents";
+import type { WorkspaceMember, WorkspaceMemberInput } from "@/lib/members";
 import { cn } from "@/lib/utils";
 import { ChevronDown, ChevronUp, FileSliders, ListTree, PanelRightClose, PanelRightOpen } from "lucide-react";
 import type { ReactNode } from "react";
@@ -13,8 +14,10 @@ type RightPanelTab = "properties" | "outline";
 interface DocumentRightPanelProps {
   document?: DocumentItem;
   contentJson: any;
+  members: WorkspaceMember[];
   wordCount: number;
   onMetaChange?: (updates: DocumentMetaUpdate) => void;
+  onCreateMember?: (input: WorkspaceMemberInput) => WorkspaceMember;
   onSyncKnowledge?: () => void;
   onOpenSyncCenter?: () => void;
   onGenerateMetadata?: () => Promise<void>;
@@ -23,8 +26,10 @@ interface DocumentRightPanelProps {
 export function DocumentRightPanel({
   document,
   contentJson,
+  members,
   wordCount,
   onMetaChange,
+  onCreateMember,
   onSyncKnowledge,
   onOpenSyncCenter,
   onGenerateMetadata,
@@ -73,6 +78,8 @@ export function DocumentRightPanel({
     );
   }
 
+  const activeLabel = activeTab === "properties" ? "属性" : "大纲";
+
   return (
     <aside className="hidden h-screen w-72 shrink-0 flex-col border-l bg-[#fbfbfa] xl:flex dark:bg-background">
       <div className="border-b px-4 pb-3 pt-4">
@@ -115,7 +122,7 @@ export function DocumentRightPanel({
           className="mt-3 flex h-7 w-full items-center justify-between rounded px-2 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
           onClick={() => setContentCollapsed((value) => !value)}
         >
-          <span>{contentCollapsed ? `展开${activeTab === "properties" ? "属性" : "大纲"}` : `收起${activeTab === "properties" ? "属性" : "大纲"}`}</span>
+          <span>{contentCollapsed ? `展开${activeLabel}` : `收起${activeLabel}`}</span>
           {contentCollapsed ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
         </button>
       </div>
@@ -123,14 +130,16 @@ export function DocumentRightPanel({
       <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5">
         {contentCollapsed ? (
           <div className="rounded-md border border-dashed px-4 py-10 text-center">
-            <div className="text-sm font-medium">{activeTab === "properties" ? "属性已收起" : "大纲已收起"}</div>
+            <div className="text-sm font-medium">{activeLabel}已收起</div>
             <p className="mt-1 text-xs leading-5 text-muted-foreground">需要查看时可以在上方重新展开。</p>
           </div>
         ) : activeTab === "properties" ? (
           <DocumentPropertiesPanel
             document={document}
+            members={members}
             wordCount={wordCount}
             onChange={onMetaChange}
+            onCreateMember={onCreateMember}
             onSyncKnowledge={onSyncKnowledge}
             onOpenSyncCenter={onOpenSyncCenter}
             onGenerateMetadata={onGenerateMetadata}

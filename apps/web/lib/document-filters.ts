@@ -1,10 +1,12 @@
 import type { DocumentItem, DocumentStatus, KnowledgeStatus } from "@/lib/documents";
+import { getMemberById, type WorkspaceMember } from "@/lib/members";
 
 export type DocumentFilter =
   | { type: "all" }
   | { type: "status"; value: DocumentStatus }
   | { type: "tag"; value: string }
-  | { type: "knowledge"; value: KnowledgeStatus };
+  | { type: "knowledge"; value: KnowledgeStatus }
+  | { type: "member"; value: string };
 
 export type DocumentFilterOption = {
   value: string;
@@ -31,10 +33,11 @@ export const knowledgeStatusLabels: Record<KnowledgeStatus, string> = {
 
 export const isDefaultDocumentFilter = (filter: DocumentFilter) => filter.type === "all";
 
-export const getDocumentFilterLabel = (filter: DocumentFilter) => {
+export const getDocumentFilterLabel = (filter: DocumentFilter, members: WorkspaceMember[] = []) => {
   if (filter.type === "status") return documentStatusLabels[filter.value];
   if (filter.type === "knowledge") return knowledgeStatusLabels[filter.value];
   if (filter.type === "tag") return `#${filter.value}`;
+  if (filter.type === "member") return getMemberById(members, filter.value)?.name ?? "未知成员";
   return "全部文档";
 };
 
@@ -42,6 +45,9 @@ export const documentMatchesFilter = (document: DocumentItem, filter: DocumentFi
   if (filter.type === "all") return true;
   if (filter.type === "status") return (document.status ?? "draft") === filter.value;
   if (filter.type === "knowledge") return (document.knowledgeStatus ?? "none") === filter.value;
+  if (filter.type === "member") {
+    return document.ownerId === filter.value || (document.memberAccess ?? []).some((access) => access.memberId === filter.value);
+  }
   return (document.tags ?? []).includes(filter.value);
 };
 
@@ -70,7 +76,7 @@ export const filterDocumentsForTree = (documents: DocumentItem[], filter: Docume
 export const getDirectFilteredDocuments = (documents: DocumentItem[], filter: DocumentFilter) =>
   documents.filter((document) => documentMatchesFilter(document, filter));
 
-export const getDocumentFilterOptions = (documents: DocumentItem[]) => {
+export const getDocumentFilterOptions = (documents: DocumentItem[], members: WorkspaceMember[] = []) => {
   const statusOptions: DocumentFilterOption[] = (Object.keys(documentStatusLabels) as DocumentStatus[]).map((status) => ({
     value: status,
     label: documentStatusLabels[status],
@@ -92,8 +98,31 @@ export const getDocumentFilterOptions = (documents: DocumentItem[]) => {
     return result;
   }, new Map<string, number>());
 
+  const memberCountById = documents.reduce((result, document) => {
+    const participantIds = new Set<string>();
+    if (document.ownerId) participantIds.add(document.ownerId);
+    for (const access of document.memberAccess ?? []) participantIds.add(access.memberId);
+
+    for (const memberId of participantIds) {
+      result.set(memberId, (result.get(memberId) ?? 0) + 1);
+    }
+
+    return result;
+  }, new Map<string, number>());
+
   const tagOptions = [...tagCountByName.entries()]
     .map(([tag, count]) => ({ value: tag, label: tag, count }))
+    .sort((a, b) => {
+      if (b.count !== a.count) return b.count - a.count;
+      return a.label.localeCompare(b.label, "zh-CN");
+    });
+
+  const memberOptions = [...memberCountById.entries()]
+    .map(([memberId, count]) => ({
+      value: memberId,
+      label: getMemberById(members, memberId)?.name ?? "未知成员",
+      count,
+    }))
     .sort((a, b) => {
       if (b.count !== a.count) return b.count - a.count;
       return a.label.localeCompare(b.label, "zh-CN");
@@ -103,5 +132,6 @@ export const getDocumentFilterOptions = (documents: DocumentItem[]) => {
     statusOptions,
     knowledgeOptions,
     tagOptions,
+    memberOptions,
   };
 };

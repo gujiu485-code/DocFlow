@@ -6,6 +6,7 @@ import { DocumentSidebar } from "@/components/workspace/document-sidebar";
 import { DocumentTemplatePicker } from "@/components/workspace/document-template-picker";
 import { DocumentTrashDialog } from "@/components/workspace/document-trash-dialog";
 import { KnowledgeSyncCenter } from "@/components/workspace/knowledge-sync-center";
+import { WorkspaceMembersDialog } from "@/components/workspace/workspace-members-dialog";
 import { WorkspaceDashboard } from "@/components/workspace/workspace-dashboard";
 import {
   defaultDocumentFilter,
@@ -63,6 +64,14 @@ import {
   type DocumentItem,
   type SaveStatusValue,
 } from "@/lib/documents";
+import {
+  createWorkspaceMember,
+  loadWorkspaceMembers,
+  saveWorkspaceMembers,
+  sortWorkspaceMembers,
+  type WorkspaceMember,
+  type WorkspaceMemberInput,
+} from "@/lib/members";
 import { useDebouncedCallback } from "use-debounce";
 import { useEffect, useMemo, useState } from "react";
 import { arrayMove } from "@dnd-kit/sortable";
@@ -79,6 +88,8 @@ export function DocumentLayout() {
   const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [trashOpen, setTrashOpen] = useState(false);
   const [syncCenterOpen, setSyncCenterOpen] = useState(false);
+  const [membersOpen, setMembersOpen] = useState(false);
+  const [members, setMembers] = useState<WorkspaceMember[]>([]);
   const [documentVersions, setDocumentVersions] = useState<DocumentVersion[]>([]);
   const [knowledgeSyncLogs, setKnowledgeSyncLogs] = useState<KnowledgeSyncLog[]>([]);
   const [knowledgeIndex, setKnowledgeIndex] = useState<KnowledgeIndexStore>(() => createEmptyKnowledgeIndex());
@@ -169,6 +180,7 @@ export function DocumentLayout() {
     setDocumentVersions(loadDocumentVersions());
     setKnowledgeSyncLogs(loadKnowledgeSyncLogs());
     setKnowledgeIndex(loadedKnowledgeIndex);
+    setMembers(loadWorkspaceMembers());
     setWorkspaceReady(true);
   }, []);
 
@@ -250,6 +262,41 @@ export function DocumentLayout() {
       }
       return nextDocuments;
     });
+  };
+
+  const commitMembers = (updater: (current: WorkspaceMember[]) => WorkspaceMember[]) => {
+    setMembers((current) => {
+      const nextMembers = sortWorkspaceMembers(updater(current));
+      saveWorkspaceMembers(nextMembers);
+      return nextMembers;
+    });
+  };
+
+  const createMember = (input: WorkspaceMemberInput) => {
+    const member = createWorkspaceMember(input);
+    commitMembers((current) => [...current, member]);
+    return member;
+  };
+
+  const updateMember = (memberId: string, updates: Partial<Pick<WorkspaceMember, "name" | "email" | "role">>) => {
+    const now = new Date().toISOString();
+
+    commitMembers((current) =>
+      current.map((member) =>
+        member.id === memberId
+          ? {
+              ...member,
+              ...updates,
+              role: member.role === "owner" ? "owner" : updates.role ?? member.role,
+              updatedAt: now,
+            }
+          : member,
+      ),
+    );
+  };
+
+  const deleteMember = (memberId: string) => {
+    commitMembers((current) => current.filter((member) => member.role === "owner" || member.id !== memberId));
   };
 
   const commitDraftDocumentValue = (nextDraftDocument: DraftDocument | null) => {
@@ -686,6 +733,7 @@ export function DocumentLayout() {
       <DocumentSidebar
         documents={sidebarDocuments}
         allDocuments={visibleDocuments}
+        members={members}
         knowledgeIndex={knowledgeIndex}
         activeDocumentId={activeDocumentId}
         workspaceActive={!activeDocument && !activeDraftDocument}
@@ -695,6 +743,7 @@ export function DocumentLayout() {
         onCreateRoot={() => openTemplatePicker(null)}
         onCreateChild={openTemplatePicker}
         onOpenDashboard={openDashboard}
+        onOpenMembers={() => setMembersOpen(true)}
         onOpenSyncCenter={() => setSyncCenterOpen(true)}
         onFilterChange={setDocumentFilter}
         onToggle={toggleDocument}
@@ -709,6 +758,7 @@ export function DocumentLayout() {
       {activeDraftDocument ? (
         <DocumentEditorPage
           document={activeDraftDocument}
+          members={members}
           saveStatus={saveStatus}
           isDraft
           onBack={commitDraftDocument}
@@ -718,12 +768,14 @@ export function DocumentLayout() {
       ) : activeDocument ? (
         <DocumentEditorPage
           document={activeDocument}
+          members={members}
           saveStatus={saveStatus}
           onTitleChange={(title) => renameDocument(activeDocument.id, title)}
           onContentChange={updateDocumentContent}
           versions={activeDocumentVersions}
           onRestoreVersion={restoreDocumentVersion}
           onMetaChange={updateDocumentMeta}
+          onCreateMember={createMember}
           onSyncKnowledge={syncDocumentToKnowledge}
           onOpenSyncCenter={() => setSyncCenterOpen(true)}
           onGenerateMetadata={generateDocumentMetadata}
@@ -752,6 +804,15 @@ export function DocumentLayout() {
         }}
         onSyncDocument={syncDocumentToKnowledge}
         onSyncAll={syncAllKnowledgeDocuments}
+      />
+      <WorkspaceMembersDialog
+        open={membersOpen}
+        members={members}
+        documents={visibleDocuments}
+        onOpenChange={setMembersOpen}
+        onCreateMember={createMember}
+        onUpdateMember={updateMember}
+        onDeleteMember={deleteMember}
       />
       <DocumentTrashDialog
         open={trashOpen}

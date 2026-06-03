@@ -1,5 +1,7 @@
 import { Button } from "@/components/tailwind/ui/button";
+import { MemberAvatar } from "@/components/workspace/member-avatar";
 import type { DocumentItem } from "@/lib/documents";
+import { getMemberById, type WorkspaceMember } from "@/lib/members";
 import { cn } from "@/lib/utils";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
@@ -8,6 +10,7 @@ import { useState } from "react";
 
 interface DocumentTreeItemProps {
   document: DocumentItem;
+  members: WorkspaceMember[];
   depth: number;
   activeDocumentId: string | null;
   hasChildren: boolean;
@@ -21,6 +24,7 @@ interface DocumentTreeItemProps {
 
 export function DocumentTreeItem({
   document,
+  members,
   depth,
   activeDocumentId,
   hasChildren,
@@ -35,6 +39,7 @@ export function DocumentTreeItem({
   const [draftTitle, setDraftTitle] = useState(document.title);
   const [actionsOpen, setActionsOpen] = useState(false);
   const isActive = document.id === activeDocumentId;
+  const owner = getMemberById(members, document.ownerId);
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: document.id,
     disabled: renaming,
@@ -45,7 +50,7 @@ export function DocumentTreeItem({
   };
 
   const commitRename = () => {
-    onRename(document.id, draftTitle.trim() || "Untitled");
+    onRename(document.id, draftTitle.trim() || "无标题");
     setRenaming(false);
   };
 
@@ -100,7 +105,10 @@ export function DocumentTreeItem({
               onClick={(event) => event.stopPropagation()}
             />
           ) : (
-            <span className="truncate">{document.title || "Untitled"}</span>
+            <>
+              <span className="truncate">{document.title || "无标题"}</span>
+              <MemberAvatar member={owner} className="ml-auto opacity-85" />
+            </>
           )}
         </button>
 

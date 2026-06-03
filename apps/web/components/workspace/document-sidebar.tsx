@@ -6,15 +6,17 @@ import { KnowledgeAssistant } from "@/components/workspace/knowledge-assistant";
 import type { DocumentFilter } from "@/lib/document-filters";
 import type { DocumentItem } from "@/lib/documents";
 import type { KnowledgeIndexStore } from "@/lib/knowledge-base";
+import type { WorkspaceMember } from "@/lib/members";
 import { cn } from "@/lib/utils";
 import { closestCenter, DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
-import { LayoutDashboard, PanelLeftClose, PanelLeftOpen, Plus, Trash2 } from "lucide-react";
+import { LayoutDashboard, PanelLeftClose, PanelLeftOpen, Plus, Trash2, Users } from "lucide-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
 
 interface DocumentSidebarProps {
   documents: DocumentItem[];
   allDocuments: DocumentItem[];
+  members: WorkspaceMember[];
   knowledgeIndex: KnowledgeIndexStore;
   activeDocumentId: string | null;
   workspaceActive?: boolean;
@@ -24,6 +26,7 @@ interface DocumentSidebarProps {
   onCreateRoot: () => void;
   onCreateChild: (parentId: string) => void;
   onOpenDashboard: () => void;
+  onOpenMembers: () => void;
   onOpenSyncCenter: () => void;
   onFilterChange: (filter: DocumentFilter) => void;
   onToggle: (documentId: string) => void;
@@ -38,6 +41,7 @@ interface DocumentSidebarProps {
 export function DocumentSidebar({
   documents,
   allDocuments,
+  members,
   knowledgeIndex,
   activeDocumentId,
   workspaceActive = false,
@@ -47,6 +51,7 @@ export function DocumentSidebar({
   onCreateRoot,
   onCreateChild,
   onOpenDashboard,
+  onOpenMembers,
   onOpenSyncCenter,
   onFilterChange,
   onToggle,
@@ -93,6 +98,9 @@ export function DocumentSidebar({
           <SidebarRailButton title="新建页面" onClick={onCreateRoot}>
             <Plus className="h-4 w-4" />
           </SidebarRailButton>
+          <SidebarRailButton title="成员管理" onClick={onOpenMembers}>
+            <Users className="h-4 w-4" />
+          </SidebarRailButton>
           <SidebarRailButton title={deletedCount ? `垃圾桶 (${deletedCount})` : "垃圾桶"} onClick={onOpenTrash}>
             <Trash2 className="h-4 w-4" />
           </SidebarRailButton>
@@ -122,7 +130,7 @@ export function DocumentSidebar({
         <div className="mt-1 text-xs text-muted-foreground">企业知识库</div>
       </div>
 
-      <div className="px-3 pb-3">
+      <div className="min-h-0 px-3 pb-3">
         <Button
           variant="ghost"
           className={cn(
@@ -138,6 +146,11 @@ export function DocumentSidebar({
           <Plus className="h-4 w-4" />
           新建页面
         </Button>
+        <Button variant="ghost" className="h-8 w-full justify-start gap-2 px-2 text-muted-foreground" onClick={onOpenMembers}>
+          <Users className="h-4 w-4" />
+          成员
+          <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">{members.length}</span>
+        </Button>
         <Button variant="ghost" className="h-8 w-full justify-start gap-2 px-2 text-muted-foreground" onClick={onOpenTrash}>
           <Trash2 className="h-4 w-4" />
           垃圾桶{deletedCount ? ` (${deletedCount})` : ""}
@@ -148,6 +161,7 @@ export function DocumentSidebar({
         <div className="mt-2">
           <DocumentFilterPanel
             documents={allDocuments}
+            members={members}
             filter={documentFilter}
             filteredCount={filteredDocumentCount}
             onFilterChange={onFilterChange}
@@ -160,6 +174,7 @@ export function DocumentSidebar({
           <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
             <DocumentTree
               documents={documents}
+              members={members}
               activeDocumentId={activeDocumentId}
               expandedDocumentIds={expandedDocumentIds}
               onToggle={onToggle}
@@ -177,11 +192,7 @@ export function DocumentSidebar({
       </div>
 
       <div className="border-t px-3 py-3">
-        <KnowledgeAssistant
-          knowledgeIndex={knowledgeIndex}
-          onOpenDocument={onSelect}
-          onOpenSyncCenter={onOpenSyncCenter}
-        />
+        <KnowledgeAssistant knowledgeIndex={knowledgeIndex} onOpenDocument={onSelect} onOpenSyncCenter={onOpenSyncCenter} />
       </div>
     </aside>
   );

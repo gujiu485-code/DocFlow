@@ -1,9 +1,11 @@
 import { DocumentTreeItem } from "@/components/workspace/document-tree-item";
 import { getChildDocuments, type DocumentItem } from "@/lib/documents";
+import type { WorkspaceMember } from "@/lib/members";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 
 interface DocumentTreeProps {
   documents: DocumentItem[];
+  members: WorkspaceMember[];
   activeDocumentId: string | null;
   expandedDocumentIds: Set<string>;
   parentId?: string | null;
@@ -17,6 +19,7 @@ interface DocumentTreeProps {
 
 export function DocumentTree({
   documents,
+  members,
   activeDocumentId,
   expandedDocumentIds,
   parentId = null,
@@ -41,6 +44,7 @@ export function DocumentTree({
             <div key={document.id}>
               <DocumentTreeItem
                 document={document}
+                members={members}
                 depth={depth}
                 activeDocumentId={activeDocumentId}
                 hasChildren={hasChildren}
@@ -54,6 +58,7 @@ export function DocumentTree({
               {hasChildren && expanded && (
                 <DocumentTree
                   documents={documents}
+                  members={members}
                   activeDocumentId={activeDocumentId}
                   expandedDocumentIds={expandedDocumentIds}
                   parentId={document.id}

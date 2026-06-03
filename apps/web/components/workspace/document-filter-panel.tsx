@@ -10,20 +10,25 @@ import {
   type DocumentFilterOption,
 } from "@/lib/document-filters";
 import type { DocumentItem, DocumentStatus, KnowledgeStatus } from "@/lib/documents";
+import type { WorkspaceMember } from "@/lib/members";
 import { cn } from "@/lib/utils";
-import { BookOpenCheck, ChevronDown, CircleDot, Hash, SlidersHorizontal, X } from "lucide-react";
+import { BookOpenCheck, ChevronDown, CircleDot, Hash, SlidersHorizontal, Users, X } from "lucide-react";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 
 interface DocumentFilterPanelProps {
   documents: DocumentItem[];
+  members: WorkspaceMember[];
   filter: DocumentFilter;
   filteredCount: number;
   onFilterChange: (filter: DocumentFilter) => void;
 }
 
-export function DocumentFilterPanel({ documents, filter, filteredCount, onFilterChange }: DocumentFilterPanelProps) {
-  const { statusOptions, knowledgeOptions, tagOptions } = useMemo(() => getDocumentFilterOptions(documents), [documents]);
+export function DocumentFilterPanel({ documents, members, filter, filteredCount, onFilterChange }: DocumentFilterPanelProps) {
+  const { statusOptions, knowledgeOptions, tagOptions, memberOptions } = useMemo(
+    () => getDocumentFilterOptions(documents, members),
+    [documents, members],
+  );
   const active = !isDefaultDocumentFilter(filter);
   const [open, setOpen] = useState(active);
 
@@ -42,19 +47,17 @@ export function DocumentFilterPanel({ documents, filter, filteredCount, onFilter
         <div className="flex min-w-0 items-center gap-1.5 text-xs font-medium text-muted-foreground">
           <SlidersHorizontal className="h-3.5 w-3.5 shrink-0" />
           <span className="shrink-0">视图筛选</span>
-          <span className="truncate font-normal">{active ? getDocumentFilterLabel(filter) : "全部文档"}</span>
+          <span className="truncate font-normal">{active ? getDocumentFilterLabel(filter, members) : "全部文档"}</span>
         </div>
         <div className="flex shrink-0 items-center gap-1">
-          {active && (
-            <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">{filteredCount}</span>
-          )}
+          {active && <span className="rounded-full bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">{filteredCount}</span>}
           <ChevronDown className={cn("h-3.5 w-3.5 text-muted-foreground transition-transform", open && "rotate-180")} />
         </div>
       </button>
 
       {open && (
-        <div className="border-t p-2">
-          <div className="mb-2 flex items-center justify-between gap-2">
+        <div className="border-t">
+          <div className="flex items-center justify-between gap-2 px-2 py-2">
             <div className="text-xs text-muted-foreground">选择一个视图范围</div>
             {active && (
               <Button
@@ -69,60 +72,77 @@ export function DocumentFilterPanel({ documents, filter, filteredCount, onFilter
             )}
           </div>
 
-          <button
-            type="button"
-            className={cn(
-              "mb-2 flex h-7 w-full items-center justify-between rounded px-2 text-xs text-muted-foreground hover:bg-accent hover:text-foreground",
-              !active && "bg-accent text-foreground",
+          <div className="max-h-[min(360px,42vh)] overflow-y-auto px-2 pb-2 pr-1">
+            <button
+              type="button"
+              className={cn(
+                "mb-2 flex h-7 w-full items-center justify-between rounded px-2 text-xs text-muted-foreground hover:bg-accent hover:text-foreground",
+                !active && "bg-accent text-foreground",
+              )}
+              onClick={() => onFilterChange(defaultDocumentFilter)}
+            >
+              <span>全部文档</span>
+              <span>{documents.length}</span>
+            </button>
+
+            {active && (
+              <div className="mb-2 rounded bg-muted/60 px-2 py-1.5 text-xs text-muted-foreground">
+                当前：{getDocumentFilterLabel(filter, members)} · {filteredCount} 篇
+              </div>
             )}
-            onClick={() => onFilterChange(defaultDocumentFilter)}
-          >
-            <span>全部文档</span>
-            <span>{documents.length}</span>
-          </button>
 
-          {active && (
-            <div className="mb-2 rounded bg-muted/60 px-2 py-1.5 text-xs text-muted-foreground">
-              当前：{getDocumentFilterLabel(filter)} · {filteredCount} 篇
-            </div>
-          )}
+            <FilterSection icon={<Users className="h-3.5 w-3.5" />} title="按成员">
+              {memberOptions.length ? (
+                memberOptions.map((option) => (
+                  <FilterButton
+                    key={option.value}
+                    option={option}
+                    active={filter.type === "member" && filter.value === option.value}
+                    onClick={() => onFilterChange({ type: "member", value: option.value })}
+                  />
+                ))
+              ) : (
+                <div className="px-2 py-1 text-xs text-muted-foreground">暂无成员分配</div>
+              )}
+            </FilterSection>
 
-          <FilterSection icon={<CircleDot className="h-3.5 w-3.5" />} title="按状态">
-            {statusOptions.map((option) => (
-              <FilterButton
-                key={option.value}
-                option={option}
-                active={filter.type === "status" && filter.value === option.value}
-                onClick={() => onFilterChange({ type: "status", value: option.value as DocumentStatus })}
-              />
-            ))}
-          </FilterSection>
-
-          <FilterSection icon={<Hash className="h-3.5 w-3.5" />} title="按标签">
-            {tagOptions.length ? (
-              tagOptions.map((option) => (
+            <FilterSection icon={<CircleDot className="h-3.5 w-3.5" />} title="按状态">
+              {statusOptions.map((option) => (
                 <FilterButton
                   key={option.value}
-                  option={{ ...option, label: `#${option.label}` }}
-                  active={filter.type === "tag" && filter.value === option.value}
-                  onClick={() => onFilterChange({ type: "tag", value: option.value })}
+                  option={option}
+                  active={filter.type === "status" && filter.value === option.value}
+                  onClick={() => onFilterChange({ type: "status", value: option.value as DocumentStatus })}
                 />
-              ))
-            ) : (
-              <div className="px-2 py-1 text-xs text-muted-foreground">暂无标签</div>
-            )}
-          </FilterSection>
+              ))}
+            </FilterSection>
 
-          <FilterSection icon={<BookOpenCheck className="h-3.5 w-3.5" />} title="知识库">
-            {knowledgeOptions.map((option) => (
-              <FilterButton
-                key={option.value}
-                option={option}
-                active={filter.type === "knowledge" && filter.value === option.value}
-                onClick={() => onFilterChange({ type: "knowledge", value: option.value as KnowledgeStatus })}
-              />
-            ))}
-          </FilterSection>
+            <FilterSection icon={<Hash className="h-3.5 w-3.5" />} title="按标签">
+              {tagOptions.length ? (
+                tagOptions.map((option) => (
+                  <FilterButton
+                    key={option.value}
+                    option={{ ...option, label: `#${option.label}` }}
+                    active={filter.type === "tag" && filter.value === option.value}
+                    onClick={() => onFilterChange({ type: "tag", value: option.value })}
+                  />
+                ))
+              ) : (
+                <div className="px-2 py-1 text-xs text-muted-foreground">暂无标签</div>
+              )}
+            </FilterSection>
+
+            <FilterSection icon={<BookOpenCheck className="h-3.5 w-3.5" />} title="知识库">
+              {knowledgeOptions.map((option) => (
+                <FilterButton
+                  key={option.value}
+                  option={option}
+                  active={filter.type === "knowledge" && filter.value === option.value}
+                  onClick={() => onFilterChange({ type: "knowledge", value: option.value as KnowledgeStatus })}
+                />
+              ))}
+            </FilterSection>
+          </div>
         </div>
       )}
     </div>

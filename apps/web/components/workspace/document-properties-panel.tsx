@@ -1,19 +1,23 @@
 "use client";
 
 import { Button } from "@/components/tailwind/ui/button";
+import { DocumentMembersPanel } from "@/components/workspace/document-members-panel";
 import { DocumentMetaInfo } from "@/components/workspace/document-meta-info";
 import { DocumentStatusSelect } from "@/components/workspace/document-status-select";
 import { DocumentTagInput } from "@/components/workspace/document-tag-input";
 import { KnowledgeStatusBadge } from "@/components/workspace/knowledge-status-badge";
 import type { DocumentItem, DocumentMetaUpdate } from "@/lib/documents";
+import type { WorkspaceMember, WorkspaceMemberInput } from "@/lib/members";
 import { DatabaseZap, FileSliders, ListChecks, Sparkles, TriangleAlert } from "lucide-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
 
 interface DocumentPropertiesPanelProps {
   document?: DocumentItem;
+  members: WorkspaceMember[];
   wordCount: number;
   onChange?: (updates: DocumentMetaUpdate) => void;
+  onCreateMember?: (input: WorkspaceMemberInput) => WorkspaceMember;
   onSyncKnowledge?: () => void;
   onOpenSyncCenter?: () => void;
   onGenerateMetadata?: () => Promise<void>;
@@ -21,8 +25,10 @@ interface DocumentPropertiesPanelProps {
 
 export function DocumentPropertiesPanel({
   document,
+  members,
   wordCount,
   onChange,
+  onCreateMember,
   onSyncKnowledge,
   onOpenSyncCenter,
   onGenerateMetadata,
@@ -35,7 +41,9 @@ export function DocumentPropertiesPanel({
       <div className="rounded-md border border-dashed px-3 py-8 text-center">
         <FileSliders className="mx-auto h-5 w-5 text-muted-foreground" />
         <div className="mt-2 text-sm font-medium">保存后可编辑属性</div>
-        <p className="mt-1 text-xs leading-5 text-muted-foreground">新建草稿转为真实文档后，会在这里显示状态、标签和摘要。</p>
+        <p className="mt-1 text-xs leading-5 text-muted-foreground">
+          新建草稿转为真实文档后，会在这里显示状态、标签、成员、摘要和知识库信息。
+        </p>
       </div>
     );
   }
@@ -90,6 +98,10 @@ export function DocumentPropertiesPanel({
         <PropertyRow label="标签">
           <DocumentTagInput tags={document.tags ?? []} onChange={(tags) => onChange?.({ tags })} />
         </PropertyRow>
+      </section>
+
+      <section className="space-y-3">
+        <DocumentMembersPanel document={document} members={members} onChange={onChange} onCreateMember={onCreateMember} />
       </section>
 
       <section className="space-y-3">

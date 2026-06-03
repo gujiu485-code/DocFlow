@@ -1,16 +1,18 @@
 import TailwindAdvancedEditor, { type EditorChangePayload } from "@/components/tailwind/advanced-editor";
+import { Button } from "@/components/tailwind/ui/button";
 import { DocumentExportMenu } from "@/components/workspace/document-export-menu";
 import { DocumentRightPanel } from "@/components/workspace/document-right-panel";
 import { DocumentTitleInput } from "@/components/workspace/document-title-input";
 import { DocumentVersionHistory } from "@/components/workspace/document-version-history";
 import { SaveStatus } from "@/components/workspace/save-status";
-import { Button } from "@/components/tailwind/ui/button";
 import type { DocumentVersion } from "@/lib/document-versions";
 import type { DocumentItem, DocumentMetaUpdate, DraftDocument, SaveStatusValue } from "@/lib/documents";
+import type { WorkspaceMember, WorkspaceMemberInput } from "@/lib/members";
 import { Maximize2 } from "lucide-react";
 
 interface DocumentEditorPageProps {
   document: DocumentItem | DraftDocument;
+  members: WorkspaceMember[];
   saveStatus: SaveStatusValue;
   onTitleChange: (title: string) => void;
   onContentChange: (documentId: string, payload: EditorChangePayload) => void;
@@ -19,6 +21,7 @@ interface DocumentEditorPageProps {
   versions?: DocumentVersion[];
   onRestoreVersion?: (versionId: string) => void;
   onMetaChange?: (documentId: string, updates: DocumentMetaUpdate) => void;
+  onCreateMember?: (input: WorkspaceMemberInput) => WorkspaceMember;
   onSyncKnowledge?: (documentId: string) => void;
   onOpenSyncCenter?: () => void;
   onGenerateMetadata?: (documentId: string) => Promise<void>;
@@ -27,6 +30,7 @@ interface DocumentEditorPageProps {
 
 export function DocumentEditorPage({
   document,
+  members,
   saveStatus,
   onTitleChange,
   onContentChange,
@@ -35,6 +39,7 @@ export function DocumentEditorPage({
   versions = [],
   onRestoreVersion,
   onMetaChange,
+  onCreateMember,
   onSyncKnowledge,
   onOpenSyncCenter,
   onGenerateMetadata,
@@ -76,11 +81,7 @@ export function DocumentEditorPage({
               {!isDraft && (
                 <>
                   {onRestoreVersion && (
-                    <DocumentVersionHistory
-                      documentTitle={document.title}
-                      versions={versions}
-                      onRestore={onRestoreVersion}
-                    />
+                    <DocumentVersionHistory documentTitle={document.title} versions={versions} onRestore={onRestoreVersion} />
                   )}
                   <SaveStatus status={saveStatus} />
                 </>
@@ -115,8 +116,10 @@ export function DocumentEditorPage({
       <DocumentRightPanel
         document={persistedDocument}
         contentJson={document.contentJson}
+        members={members}
         wordCount={wordCount}
         onMetaChange={onMetaChange ? (updates) => onMetaChange(documentId, updates) : undefined}
+        onCreateMember={onCreateMember}
         onSyncKnowledge={onSyncKnowledge ? () => onSyncKnowledge(documentId) : undefined}
         onOpenSyncCenter={onOpenSyncCenter}
         onGenerateMetadata={onGenerateMetadata ? () => onGenerateMetadata(documentId) : undefined}

@@ -1,10 +1,18 @@
 import { createEmptyEditorContent, defaultEditorContent } from "@/lib/content";
+import { DEFAULT_WORKSPACE_MEMBER_ID } from "@/lib/members";
 
 export type KnowledgeStatus = "none" | "pending" | "indexed" | "failed" | "outdated";
 
 export type DocumentStatus = "draft" | "reviewing" | "published" | "archived";
 
 export type SaveStatusValue = "saving" | "saved" | "error";
+
+export type DocumentMemberRole = "editor" | "viewer";
+
+export type DocumentMemberAccess = {
+  memberId: string;
+  role: DocumentMemberRole;
+};
 
 export type DocumentItem = {
   id: string;
@@ -20,9 +28,13 @@ export type DocumentItem = {
   deletedAt?: string | null;
   status?: DocumentStatus;
   knowledgeStatus?: KnowledgeStatus;
+  ownerId?: string | null;
+  memberAccess?: DocumentMemberAccess[];
 };
 
-export type DocumentMetaUpdate = Partial<Pick<DocumentItem, "status" | "tags" | "summary" | "knowledgeStatus">>;
+export type DocumentMetaUpdate = Partial<
+  Pick<DocumentItem, "status" | "tags" | "summary" | "knowledgeStatus" | "ownerId" | "memberAccess">
+>;
 
 export type DraftDocument = {
   id: string;
@@ -66,6 +78,8 @@ export const createDocumentItem = (
     deletedAt: null,
     status: "draft",
     knowledgeStatus: "none",
+    ownerId: DEFAULT_WORKSPACE_MEMBER_ID,
+    memberAccess: [],
   };
 };
 
@@ -97,6 +111,8 @@ export const materializeDraftDocument = (draftDocument: DraftDocument, sortOrder
     updatedAt: now,
     deletedAt: null,
     status: "draft",
+    ownerId: DEFAULT_WORKSPACE_MEMBER_ID,
+    memberAccess: [],
   };
 };
 
@@ -148,7 +164,25 @@ const normalizeDocument = (value: Partial<DocumentItem> & Record<string, unknown
       value.knowledgeStatus === "outdated"
         ? value.knowledgeStatus
         : "none",
+    ownerId: typeof value.ownerId === "string" && value.ownerId.trim() ? value.ownerId : DEFAULT_WORKSPACE_MEMBER_ID,
+    memberAccess: normalizeDocumentMemberAccess(value.memberAccess),
   };
+};
+
+const normalizeDocumentMemberAccess = (value: unknown): DocumentMemberAccess[] => {
+  if (!Array.isArray(value)) return [];
+
+  const accessByMemberId = new Map<string, DocumentMemberRole>();
+
+  for (const item of value) {
+    if (!item || typeof item !== "object") continue;
+    const candidate = item as Partial<DocumentMemberAccess>;
+    if (typeof candidate.memberId !== "string" || !candidate.memberId.trim()) continue;
+    const role = candidate.role === "viewer" ? "viewer" : "editor";
+    accessByMemberId.set(candidate.memberId, role);
+  }
+
+  return [...accessByMemberId.entries()].map(([memberId, role]) => ({ memberId, role }));
 };
 
 export const normalizeSortOrder = (documents: DocumentItem[]) => {
