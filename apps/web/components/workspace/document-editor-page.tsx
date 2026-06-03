@@ -21,6 +21,7 @@ interface DocumentEditorPageProps {
   versions?: DocumentVersion[];
   onRestoreVersion?: (versionId: string) => void;
   onMetaChange?: (documentId: string, updates: DocumentMetaUpdate) => void;
+  canManageDocumentMembers?: boolean;
   onCreateMember?: (input: WorkspaceMemberInput) => WorkspaceMember;
   onSyncKnowledge?: (documentId: string) => void;
   onOpenSyncCenter?: () => void;
@@ -39,6 +40,7 @@ export function DocumentEditorPage({
   versions = [],
   onRestoreVersion,
   onMetaChange,
+  canManageDocumentMembers = false,
   onCreateMember,
   onSyncKnowledge,
   onOpenSyncCenter,
@@ -119,6 +121,7 @@ export function DocumentEditorPage({
         members={members}
         wordCount={wordCount}
         onMetaChange={onMetaChange ? (updates) => onMetaChange(documentId, updates) : undefined}
+        canManageDocumentMembers={canManageDocumentMembers}
         onCreateMember={onCreateMember}
         onSyncKnowledge={onSyncKnowledge ? () => onSyncKnowledge(documentId) : undefined}
         onOpenSyncCenter={onOpenSyncCenter}

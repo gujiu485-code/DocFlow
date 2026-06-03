@@ -80,8 +80,8 @@ export const createDefaultWorkspaceMembers = (): WorkspaceMember[] => {
     },
     {
       id: "member-tech",
-      name: "技术负责人",
-      email: "tech@docflow.local",
+      name: "普通用户",
+      email: "user@docflow.local",
       role: "member",
       avatarColor: avatarColors[2],
       createdAt: now,

@@ -61,6 +61,7 @@ export const createDocumentItem = (
   title = "Untitled",
   sortOrder = 0,
   contentJson: any = createEmptyEditorContent(),
+  ownerId = DEFAULT_WORKSPACE_MEMBER_ID,
 ): DocumentItem => {
   const now = new Date().toISOString();
 
@@ -78,7 +79,7 @@ export const createDocumentItem = (
     deletedAt: null,
     status: "draft",
     knowledgeStatus: "none",
-    ownerId: DEFAULT_WORKSPACE_MEMBER_ID,
+    ownerId,
     memberAccess: [],
   };
 };
@@ -96,7 +97,11 @@ export const createDraftDocument = (
   contentText,
 });
 
-export const materializeDraftDocument = (draftDocument: DraftDocument, sortOrder: number): DocumentItem => {
+export const materializeDraftDocument = (
+  draftDocument: DraftDocument,
+  sortOrder: number,
+  ownerId = DEFAULT_WORKSPACE_MEMBER_ID,
+): DocumentItem => {
   const now = new Date().toISOString();
 
   return {
@@ -111,7 +116,7 @@ export const materializeDraftDocument = (draftDocument: DraftDocument, sortOrder
     updatedAt: now,
     deletedAt: null,
     status: "draft",
-    ownerId: DEFAULT_WORKSPACE_MEMBER_ID,
+    ownerId,
     memberAccess: [],
   };
 };

@@ -3,13 +3,14 @@ import { DocumentFilterPanel } from "@/components/workspace/document-filter-pane
 import { DocumentSearchPanel } from "@/components/workspace/document-search-panel";
 import { DocumentTree } from "@/components/workspace/document-tree";
 import { KnowledgeAssistant } from "@/components/workspace/knowledge-assistant";
+import { authRoleLabels, type AuthSession } from "@/lib/auth";
 import type { DocumentFilter } from "@/lib/document-filters";
 import type { DocumentItem } from "@/lib/documents";
 import type { KnowledgeIndexStore } from "@/lib/knowledge-base";
 import type { WorkspaceMember } from "@/lib/members";
 import { cn } from "@/lib/utils";
 import { closestCenter, DndContext, PointerSensor, useSensor, useSensors, type DragEndEvent } from "@dnd-kit/core";
-import { LayoutDashboard, PanelLeftClose, PanelLeftOpen, Plus, Trash2, Users } from "lucide-react";
+import { LayoutDashboard, LogOut, PanelLeftClose, PanelLeftOpen, Plus, Trash2, Users } from "lucide-react";
 import type { ReactNode } from "react";
 import { useState } from "react";
 
@@ -17,6 +18,7 @@ interface DocumentSidebarProps {
   documents: DocumentItem[];
   allDocuments: DocumentItem[];
   members: WorkspaceMember[];
+  authSession: AuthSession;
   knowledgeIndex: KnowledgeIndexStore;
   activeDocumentId: string | null;
   workspaceActive?: boolean;
@@ -26,8 +28,10 @@ interface DocumentSidebarProps {
   onCreateRoot: () => void;
   onCreateChild: (parentId: string) => void;
   onOpenDashboard: () => void;
+  canManageMembers: boolean;
   onOpenMembers: () => void;
   onOpenSyncCenter: () => void;
+  onLogout: () => void;
   onFilterChange: (filter: DocumentFilter) => void;
   onToggle: (documentId: string) => void;
   onSelect: (documentId: string) => void;
@@ -42,6 +46,7 @@ export function DocumentSidebar({
   documents,
   allDocuments,
   members,
+  authSession,
   knowledgeIndex,
   activeDocumentId,
   workspaceActive = false,
@@ -51,8 +56,10 @@ export function DocumentSidebar({
   onCreateRoot,
   onCreateChild,
   onOpenDashboard,
+  canManageMembers,
   onOpenMembers,
   onOpenSyncCenter,
+  onLogout,
   onFilterChange,
   onToggle,
   onSelect,
@@ -98,11 +105,16 @@ export function DocumentSidebar({
           <SidebarRailButton title="新建页面" onClick={onCreateRoot}>
             <Plus className="h-4 w-4" />
           </SidebarRailButton>
-          <SidebarRailButton title="成员管理" onClick={onOpenMembers}>
-            <Users className="h-4 w-4" />
-          </SidebarRailButton>
+          {canManageMembers && (
+            <SidebarRailButton title="成员管理" onClick={onOpenMembers}>
+              <Users className="h-4 w-4" />
+            </SidebarRailButton>
+          )}
           <SidebarRailButton title={deletedCount ? `垃圾桶 (${deletedCount})` : "垃圾桶"} onClick={onOpenTrash}>
             <Trash2 className="h-4 w-4" />
+          </SidebarRailButton>
+          <SidebarRailButton title="退出登录" onClick={onLogout}>
+            <LogOut className="h-4 w-4" />
           </SidebarRailButton>
         </div>
       </aside>
@@ -146,11 +158,13 @@ export function DocumentSidebar({
           <Plus className="h-4 w-4" />
           新建页面
         </Button>
-        <Button variant="ghost" className="h-8 w-full justify-start gap-2 px-2 text-muted-foreground" onClick={onOpenMembers}>
-          <Users className="h-4 w-4" />
-          成员
-          <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">{members.length}</span>
-        </Button>
+        {canManageMembers && (
+          <Button variant="ghost" className="h-8 w-full justify-start gap-2 px-2 text-muted-foreground" onClick={onOpenMembers}>
+            <Users className="h-4 w-4" />
+            成员
+            <span className="ml-auto rounded-full bg-muted px-1.5 py-0.5 text-[11px] text-muted-foreground">{members.length}</span>
+          </Button>
+        )}
         <Button variant="ghost" className="h-8 w-full justify-start gap-2 px-2 text-muted-foreground" onClick={onOpenTrash}>
           <Trash2 className="h-4 w-4" />
           垃圾桶{deletedCount ? ` (${deletedCount})` : ""}
@@ -192,6 +206,23 @@ export function DocumentSidebar({
       </div>
 
       <div className="border-t px-3 py-3">
+        <div className="mb-3 rounded-md border bg-background px-3 py-2">
+          <div className="flex items-center justify-between gap-2">
+            <div className="min-w-0">
+              <div className="truncate text-xs font-medium">{authSession.name}</div>
+              <div className="mt-0.5 truncate text-[11px] text-muted-foreground">{authRoleLabels[authSession.role]}</div>
+            </div>
+            <button
+              type="button"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              onClick={onLogout}
+              title="退出登录"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+              <span className="sr-only">退出登录</span>
+            </button>
+          </div>
+        </div>
         <KnowledgeAssistant knowledgeIndex={knowledgeIndex} onOpenDocument={onSelect} onOpenSyncCenter={onOpenSyncCenter} />
       </div>
     </aside>

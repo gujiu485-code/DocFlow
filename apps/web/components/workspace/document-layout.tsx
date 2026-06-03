@@ -2,6 +2,7 @@
 
 import type { EditorChangePayload } from "@/components/tailwind/advanced-editor";
 import { DocumentEditorPage } from "@/components/workspace/document-editor-page";
+import { DocumentLoginPage } from "@/components/workspace/document-login-page";
 import { DocumentSidebar } from "@/components/workspace/document-sidebar";
 import { DocumentTemplatePicker } from "@/components/workspace/document-template-picker";
 import { DocumentTrashDialog } from "@/components/workspace/document-trash-dialog";
@@ -64,6 +65,7 @@ import {
   type DocumentItem,
   type SaveStatusValue,
 } from "@/lib/documents";
+import { clearAuthSession, isAdminSession, loadAuthSession, type AuthSession } from "@/lib/auth";
 import {
   createWorkspaceMember,
   loadWorkspaceMembers,
@@ -78,6 +80,7 @@ import { arrayMove } from "@dnd-kit/sortable";
 
 export function DocumentLayout() {
   const [workspaceReady, setWorkspaceReady] = useState(false);
+  const [authSession, setAuthSession] = useState<AuthSession | null>(null);
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [activeDocumentId, setActiveDocumentId] = useState<string | null>(null);
   const [expandedDocumentIds, setExpandedDocumentIds] = useState<Set<string>>(new Set());
@@ -152,6 +155,8 @@ export function DocumentLayout() {
   };
 
   useEffect(() => {
+    setAuthSession(loadAuthSession());
+
     const loadedKnowledgeIndex = loadKnowledgeIndex();
     const loadedDocuments = loadDocuments();
     let recoveredPendingStatus = false;
@@ -273,12 +278,18 @@ export function DocumentLayout() {
   };
 
   const createMember = (input: WorkspaceMemberInput) => {
+    if (!isAdminSession(authSession)) {
+      throw new Error("只有管理员可以新增成员。");
+    }
+
     const member = createWorkspaceMember(input);
     commitMembers((current) => [...current, member]);
     return member;
   };
 
   const updateMember = (memberId: string, updates: Partial<Pick<WorkspaceMember, "name" | "email" | "role">>) => {
+    if (!isAdminSession(authSession)) return;
+
     const now = new Date().toISOString();
 
     commitMembers((current) =>
@@ -296,6 +307,8 @@ export function DocumentLayout() {
   };
 
   const deleteMember = (memberId: string) => {
+    if (!isAdminSession(authSession)) return;
+
     commitMembers((current) => current.filter((member) => member.role === "owner" || member.id !== memberId));
   };
 
@@ -312,7 +325,7 @@ export function DocumentLayout() {
     }
 
     const siblingCount = documents.filter((document) => document.parentId === nextDraftDocument.parentId && !document.deletedAt).length;
-    const nextDocument = materializeDraftDocument(nextDraftDocument, siblingCount);
+    const nextDocument = materializeDraftDocument(nextDraftDocument, siblingCount, authSession?.memberId);
 
     commitDocuments((current) => [...current, nextDocument], { immediate: true });
     setDraftDocument(null);
@@ -728,12 +741,28 @@ export function DocumentLayout() {
     );
   }
 
+  if (!authSession) {
+    return <DocumentLoginPage onLogin={setAuthSession} />;
+  }
+
+  const canManageMembers = isAdminSession(authSession);
+  const logout = () => {
+    clearAuthSession();
+    setAuthSession(null);
+    setMembersOpen(false);
+    setSyncCenterOpen(false);
+    setTrashOpen(false);
+    setDraftDocument(null);
+    setActiveDocumentId(null);
+  };
+
   return (
     <div className="flex min-h-screen bg-background text-foreground">
       <DocumentSidebar
         documents={sidebarDocuments}
         allDocuments={visibleDocuments}
         members={members}
+        authSession={authSession}
         knowledgeIndex={knowledgeIndex}
         activeDocumentId={activeDocumentId}
         workspaceActive={!activeDocument && !activeDraftDocument}
@@ -743,8 +772,12 @@ export function DocumentLayout() {
         onCreateRoot={() => openTemplatePicker(null)}
         onCreateChild={openTemplatePicker}
         onOpenDashboard={openDashboard}
-        onOpenMembers={() => setMembersOpen(true)}
+        canManageMembers={canManageMembers}
+        onOpenMembers={() => {
+          if (canManageMembers) setMembersOpen(true);
+        }}
         onOpenSyncCenter={() => setSyncCenterOpen(true)}
+        onLogout={logout}
         onFilterChange={setDocumentFilter}
         onToggle={toggleDocument}
         onSelect={selectDocument}
@@ -775,7 +808,8 @@ export function DocumentLayout() {
           versions={activeDocumentVersions}
           onRestoreVersion={restoreDocumentVersion}
           onMetaChange={updateDocumentMeta}
-          onCreateMember={createMember}
+          canManageDocumentMembers={canManageMembers}
+          onCreateMember={canManageMembers ? createMember : undefined}
           onSyncKnowledge={syncDocumentToKnowledge}
           onOpenSyncCenter={() => setSyncCenterOpen(true)}
           onGenerateMetadata={generateDocumentMetadata}
@@ -806,7 +840,7 @@ export function DocumentLayout() {
         onSyncAll={syncAllKnowledgeDocuments}
       />
       <WorkspaceMembersDialog
-        open={membersOpen}
+        open={membersOpen && canManageMembers}
         members={members}
         documents={visibleDocuments}
         onOpenChange={setMembersOpen}

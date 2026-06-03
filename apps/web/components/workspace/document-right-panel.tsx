@@ -17,6 +17,7 @@ interface DocumentRightPanelProps {
   members: WorkspaceMember[];
   wordCount: number;
   onMetaChange?: (updates: DocumentMetaUpdate) => void;
+  canManageDocumentMembers?: boolean;
   onCreateMember?: (input: WorkspaceMemberInput) => WorkspaceMember;
   onSyncKnowledge?: () => void;
   onOpenSyncCenter?: () => void;
@@ -29,6 +30,7 @@ export function DocumentRightPanel({
   members,
   wordCount,
   onMetaChange,
+  canManageDocumentMembers = false,
   onCreateMember,
   onSyncKnowledge,
   onOpenSyncCenter,
@@ -139,6 +141,7 @@ export function DocumentRightPanel({
             members={members}
             wordCount={wordCount}
             onChange={onMetaChange}
+            canManageDocumentMembers={canManageDocumentMembers}
             onCreateMember={onCreateMember}
             onSyncKnowledge={onSyncKnowledge}
             onOpenSyncCenter={onOpenSyncCenter}

@@ -17,6 +17,7 @@ interface DocumentPropertiesPanelProps {
   members: WorkspaceMember[];
   wordCount: number;
   onChange?: (updates: DocumentMetaUpdate) => void;
+  canManageDocumentMembers?: boolean;
   onCreateMember?: (input: WorkspaceMemberInput) => WorkspaceMember;
   onSyncKnowledge?: () => void;
   onOpenSyncCenter?: () => void;
@@ -28,6 +29,7 @@ export function DocumentPropertiesPanel({
   members,
   wordCount,
   onChange,
+  canManageDocumentMembers = false,
   onCreateMember,
   onSyncKnowledge,
   onOpenSyncCenter,
@@ -101,7 +103,12 @@ export function DocumentPropertiesPanel({
       </section>
 
       <section className="space-y-3">
-        <DocumentMembersPanel document={document} members={members} onChange={onChange} onCreateMember={onCreateMember} />
+        <DocumentMembersPanel
+          document={document}
+          members={members}
+          onChange={canManageDocumentMembers ? onChange : undefined}
+          onCreateMember={canManageDocumentMembers ? onCreateMember : undefined}
+        />
       </section>
 
       <section className="space-y-3">
