@@ -17,6 +17,12 @@ import {
   type DocumentFilter,
 } from "@/lib/document-filters";
 import {
+  canAccessDocument,
+  createDocumentTreeView,
+  getAccessibleDocumentIds,
+  getAccessibleDocuments,
+} from "@/lib/document-access";
+import {
   getDocumentTemplate,
   getTemplateBodyContent,
   getTemplateBodyText,
@@ -34,6 +40,7 @@ import {
 import {
   buildDocumentKnowledgeIndex,
   createEmptyKnowledgeIndex,
+  filterKnowledgeIndexByDocumentIds,
   isDocumentKnowledgeIndexStale,
   loadKnowledgeIndex,
   removeDocumentsFromKnowledgeIndex,
@@ -197,20 +204,39 @@ export function DocumentLayout() {
     saveExpandedDocumentIds(expandedDocumentIds);
   }, [expandedDocumentIds]);
 
-  const visibleDocuments = useMemo(() => documents.filter((document) => !document.deletedAt), [documents]);
+  const allVisibleDocuments = useMemo(() => documents.filter((document) => !document.deletedAt), [documents]);
+  const visibleDocuments = useMemo(
+    () => getAccessibleDocuments(allVisibleDocuments, authSession),
+    [allVisibleDocuments, authSession],
+  );
+  const visibleDocumentIds = useMemo(() => getAccessibleDocumentIds(allVisibleDocuments, authSession), [allVisibleDocuments, authSession]);
+  const accessibleTreeDocuments = useMemo(() => createDocumentTreeView(visibleDocuments), [visibleDocuments]);
+  const visibleKnowledgeIndex = useMemo(
+    () => filterKnowledgeIndexByDocumentIds(knowledgeIndex, visibleDocumentIds),
+    [knowledgeIndex, visibleDocumentIds],
+  );
   const directFilteredDocuments = useMemo(
     () => getDirectFilteredDocuments(visibleDocuments, documentFilter),
     [visibleDocuments, documentFilter],
   );
   const sidebarDocuments = useMemo(
-    () => filterDocumentsForTree(visibleDocuments, documentFilter),
-    [visibleDocuments, documentFilter],
+    () => filterDocumentsForTree(accessibleTreeDocuments, documentFilter),
+    [accessibleTreeDocuments, documentFilter],
   );
-  const deletedDocuments = useMemo(() => documents.filter((document) => document.deletedAt), [documents]);
-  const activeDocument = documents.find((document) => document.id === activeDocumentId && !document.deletedAt) ?? null;
+  const deletedDocuments = useMemo(
+    () => getAccessibleDocuments(documents.filter((document) => document.deletedAt), authSession),
+    [documents, authSession],
+  );
+  const activeDocument = visibleDocuments.find((document) => document.id === activeDocumentId) ?? null;
   const activeDocumentVersions = activeDocument ? getDocumentVersions(documentVersions, activeDocument.id) : [];
   const activeDraftDocument = draftDocument;
   const activeDraftDocumentId = activeDraftDocument?.id ?? null;
+
+  useEffect(() => {
+    if (draftDocument || !activeDocumentId) return;
+    if (visibleDocuments.some((document) => document.id === activeDocumentId)) return;
+    setActiveDocumentId(null);
+  }, [activeDocumentId, draftDocument, visibleDocuments]);
 
   useEffect(() => {
     if (draftDocument || isDefaultDocumentFilter(documentFilter)) return;
@@ -224,7 +250,7 @@ export function DocumentLayout() {
   useEffect(() => {
     if (isDefaultDocumentFilter(documentFilter)) return;
 
-    const documentById = new Map(visibleDocuments.map((document) => [document.id, document]));
+    const documentById = new Map(accessibleTreeDocuments.map((document) => [document.id, document]));
     const ancestorIds = new Set<string>();
 
     for (const document of directFilteredDocuments) {
@@ -249,7 +275,7 @@ export function DocumentLayout() {
       }
       return changed ? next : current;
     });
-  }, [directFilteredDocuments, documentFilter, visibleDocuments]);
+  }, [accessibleTreeDocuments, directFilteredDocuments, documentFilter]);
 
   const commitDocuments = (updater: (current: DocumentItem[]) => DocumentItem[], options?: { immediate?: boolean }) => {
     setDocuments((current) => {
@@ -316,7 +342,7 @@ export function DocumentLayout() {
     // 新建草稿只有在标题和正文都为空时才丢弃；正文有内容时，即使没有标题也要保留。
     if (isDraftDocumentEmpty(nextDraftDocument)) {
       const fallbackId =
-        previousDocumentId && documents.some((document) => document.id === previousDocumentId && !document.deletedAt)
+        previousDocumentId && visibleDocuments.some((document) => document.id === previousDocumentId)
           ? previousDocumentId
           : null;
       setDraftDocument(null);
@@ -341,6 +367,8 @@ export function DocumentLayout() {
   const commitDraftDocument = () => commitDraftDocumentValue(draftDocument);
 
   const openTemplatePicker = (parentId: string | null = null) => {
+    if (parentId && !visibleDocumentIds.has(parentId)) return;
+
     if (draftDocument && !isDraftDocumentEmpty(draftDocument)) {
       commitDraftDocument();
     }
@@ -351,7 +379,7 @@ export function DocumentLayout() {
   };
 
   const createDocument = (templateId: string) => {
-    const parentId = templateParentId;
+    const parentId = templateParentId && visibleDocumentIds.has(templateParentId) ? templateParentId : null;
     const template = getDocumentTemplate(templateId);
 
     setPreviousDocumentId(activeDocumentId);
@@ -385,7 +413,7 @@ export function DocumentLayout() {
   };
 
   const selectDocument = (documentId: string) => {
-    if (!documents.some((document) => document.id === documentId && !document.deletedAt)) return;
+    if (!visibleDocuments.some((document) => document.id === documentId)) return;
 
     if (draftDocument) {
       if (!isDraftDocumentEmpty(draftDocument)) {
@@ -399,6 +427,9 @@ export function DocumentLayout() {
   };
 
   const renameDocument = (documentId: string, title: string) => {
+    const targetDocument = documents.find((document) => document.id === documentId && !document.deletedAt);
+    if (!canAccessDocument(authSession, targetDocument)) return;
+
     snapshotDocument(documents.find((document) => document.id === documentId && !document.deletedAt));
 
     commitDocuments((current) =>
@@ -411,9 +442,15 @@ export function DocumentLayout() {
   };
 
   const deleteDocument = (documentId: string) => {
-    const idsToDelete = new Set([documentId, ...getDescendantDocumentIds(documents, documentId)]);
+    const targetDocument = documents.find((document) => document.id === documentId && !document.deletedAt);
+    if (!canAccessDocument(authSession, targetDocument)) return;
+
+    const candidateIds = [documentId, ...getDescendantDocumentIds(documents, documentId)];
+    const idsToDelete = new Set(
+      candidateIds.filter((id) => canAccessDocument(authSession, documents.find((document) => document.id === id))),
+    );
     const nextActiveDocumentId = idsToDelete.has(activeDocumentId ?? "")
-      ? documents.find((document) => !document.deletedAt && !idsToDelete.has(document.id))?.id ?? null
+      ? visibleDocuments.find((document) => !idsToDelete.has(document.id))?.id ?? null
       : activeDocumentId;
     const now = new Date().toISOString();
 
@@ -435,7 +472,13 @@ export function DocumentLayout() {
   };
 
   const restoreDocument = (documentId: string) => {
-    const idsToRestore = new Set([documentId, ...getDescendantDocumentIds(documents, documentId)]);
+    const targetDocument = documents.find((document) => document.id === documentId && document.deletedAt);
+    if (!canAccessDocument(authSession, targetDocument)) return;
+
+    const candidateIds = [documentId, ...getDescendantDocumentIds(documents, documentId)];
+    const idsToRestore = new Set(
+      candidateIds.filter((id) => canAccessDocument(authSession, documents.find((document) => document.id === id))),
+    );
     const now = new Date().toISOString();
 
     commitDocuments(
@@ -460,9 +503,15 @@ export function DocumentLayout() {
   };
 
   const permanentlyDeleteDocument = (documentId: string) => {
-    const idsToDelete = new Set([documentId, ...getDescendantDocumentIds(documents, documentId)]);
+    const targetDocument = documents.find((document) => document.id === documentId && document.deletedAt);
+    if (!canAccessDocument(authSession, targetDocument)) return;
+
+    const candidateIds = [documentId, ...getDescendantDocumentIds(documents, documentId)];
+    const idsToDelete = new Set(
+      candidateIds.filter((id) => canAccessDocument(authSession, documents.find((document) => document.id === id))),
+    );
     const nextActiveDocumentId = idsToDelete.has(activeDocumentId ?? "")
-      ? documents.find((document) => !document.deletedAt && !idsToDelete.has(document.id))?.id ?? null
+      ? visibleDocuments.find((document) => !idsToDelete.has(document.id))?.id ?? null
       : activeDocumentId;
 
     commitDocuments((current) => current.filter((document) => !idsToDelete.has(document.id)), { immediate: true });
@@ -523,6 +572,9 @@ export function DocumentLayout() {
       return;
     }
 
+    const targetDocument = documents.find((document) => document.id === sourceDocumentId && !document.deletedAt);
+    if (!canAccessDocument(authSession, targetDocument)) return;
+
     snapshotDocument(documents.find((document) => document.id === sourceDocumentId && !document.deletedAt));
 
     commitDocuments((current) =>
@@ -541,6 +593,9 @@ export function DocumentLayout() {
   };
 
   const updateDocumentMeta = (documentId: string, updates: DocumentMetaUpdate) => {
+    const targetDocument = documents.find((document) => document.id === documentId && !document.deletedAt);
+    if (!canAccessDocument(authSession, targetDocument)) return;
+
     const now = new Date().toISOString();
 
     commitDocuments((current) =>
@@ -563,6 +618,9 @@ export function DocumentLayout() {
   };
 
   const setDocumentKnowledgeStatus = (documentId: string, knowledgeStatus: DocumentItem["knowledgeStatus"]) => {
+    const targetDocument = documents.find((document) => document.id === documentId && !document.deletedAt);
+    if (!canAccessDocument(authSession, targetDocument)) return;
+
     const now = new Date().toISOString();
 
     commitDocuments(
@@ -668,6 +726,7 @@ export function DocumentLayout() {
 
   const generateDocumentMetadata = async (documentId: string) => {
     const document = documents.find((item) => item.id === documentId && !item.deletedAt);
+    if (!canAccessDocument(authSession, document)) throw new Error("当前文档不存在，或你没有访问权限。");
     if (!document) throw new Error("当前文档不存在。");
 
     const title = document.title.trim();
@@ -704,7 +763,10 @@ export function DocumentLayout() {
     const version = documentVersions.find((item) => item.id === versionId);
     if (!version) return;
 
-    snapshotDocument(documents.find((document) => document.id === version.documentId && !document.deletedAt), { force: true });
+    const targetDocument = documents.find((document) => document.id === version.documentId && !document.deletedAt);
+    if (!canAccessDocument(authSession, targetDocument)) return;
+
+    snapshotDocument(targetDocument, { force: true });
 
     commitDocuments(
       (current) =>
@@ -763,7 +825,7 @@ export function DocumentLayout() {
         allDocuments={visibleDocuments}
         members={members}
         authSession={authSession}
-        knowledgeIndex={knowledgeIndex}
+        knowledgeIndex={visibleKnowledgeIndex}
         activeDocumentId={activeDocumentId}
         workspaceActive={!activeDocument && !activeDraftDocument}
         expandedDocumentIds={expandedDocumentIds}
@@ -829,7 +891,7 @@ export function DocumentLayout() {
       <KnowledgeSyncCenter
         open={syncCenterOpen}
         documents={visibleDocuments}
-        knowledgeIndex={knowledgeIndex}
+        knowledgeIndex={visibleKnowledgeIndex}
         logs={knowledgeSyncLogs}
         onOpenChange={setSyncCenterOpen}
         onOpenDocument={(documentId) => {

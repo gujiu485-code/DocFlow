@@ -267,13 +267,27 @@ const deleteDocumentsFromVectorStore = async (
   });
 };
 
-export const retrieveFromLangChainRag = async (query: string, limit?: number): Promise<RagRetrievedChunk[]> => {
+export const retrieveFromLangChainRag = async (
+  query: string,
+  limit?: number,
+  documentIds?: string[],
+): Promise<RagRetrievedChunk[]> => {
   const config = getRagRuntimeConfig();
   const status = getRagBackendStatus(config);
   if (!status.enabled || !query.trim()) return [];
+  const normalizedDocumentIds = documentIds ? normalizeDocumentIds(documentIds) : [];
+  if (documentIds && !normalizedDocumentIds.length) return [];
 
   const vectorStore = await createVectorStore(config);
-  const rawResults = await vectorStore.similaritySearchWithScore(query, limit ?? config.topK);
+  const rawResults = await vectorStore.similaritySearchWithScore(
+    query,
+    limit ?? config.topK,
+    normalizedDocumentIds.length
+      ? config.provider === "qdrant"
+        ? createQdrantDocumentFilter(normalizedDocumentIds)
+        : createPgDocumentFilter(normalizedDocumentIds)
+      : undefined,
+  );
 
   return rawResults
     .map(([document, score]) => {

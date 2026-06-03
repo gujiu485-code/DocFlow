@@ -70,6 +70,11 @@ const normalizeContextChunks = (value: unknown): AskContextChunk[] => {
     .slice(0, 6);
 };
 
+const normalizeDocumentIds = (value: unknown): string[] => {
+  if (!Array.isArray(value)) return [];
+  return [...new Set(value.map((item) => (typeof item === "string" ? item.trim() : "")).filter(Boolean))].slice(0, 500);
+};
+
 const createCitations = (chunks: AskContextChunk[]): AskCitation[] =>
   chunks.map((chunk) => ({
     chunkId: chunk.id,
@@ -90,9 +95,14 @@ const createRetrievedChunks = (chunks: AskContextChunk[], provider: AskContextSo
     provider,
   }));
 
-const retrieveBackendChunks = async (question: string): Promise<{ chunks: AskContextChunk[]; source: AskContextSource }> => {
+const retrieveBackendChunks = async (
+  question: string,
+  allowedDocumentIds: string[],
+): Promise<{ chunks: AskContextChunk[]; source: AskContextSource }> => {
+  if (!allowedDocumentIds.length) return { chunks: [], source: "local" };
+
   try {
-    const chunks = await retrieveFromLangChainRag(question);
+    const chunks = await retrieveFromLangChainRag(question, undefined, allowedDocumentIds);
     if (!chunks.length) return { chunks: [], source: "local" };
 
     return {
@@ -120,13 +130,15 @@ export async function POST(req: Request): Promise<Response> {
 
   const body = await req.json();
   const question = clampText(body.question, 500);
-  const fallbackChunks = normalizeContextChunks(body.chunks);
+  const allowedDocumentIds = normalizeDocumentIds(body.allowedDocumentIds);
+  const allowedDocumentIdSet = new Set(allowedDocumentIds);
+  const fallbackChunks = normalizeContextChunks(body.chunks).filter((chunk) => allowedDocumentIdSet.has(chunk.documentId));
 
   if (!question) {
     return Response.json({ error: "请输入问题。" }, { status: 400 });
   }
 
-  const backendResult = await retrieveBackendChunks(question);
+  const backendResult = await retrieveBackendChunks(question, allowedDocumentIds);
   const chunks = backendResult.chunks.length ? backendResult.chunks : fallbackChunks;
   const contextSource = backendResult.chunks.length ? backendResult.source : "local";
 

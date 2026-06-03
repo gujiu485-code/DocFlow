@@ -104,6 +104,7 @@ export function KnowledgeAskPanel({
         },
         body: JSON.stringify({
           question: nextQuestion,
+          allowedDocumentIds: knowledgeIndex.documents.map((document) => document.documentId),
           chunks: matchedChunks.map(toAskContextChunk),
         }),
       });

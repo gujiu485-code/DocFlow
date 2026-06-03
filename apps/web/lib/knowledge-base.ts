@@ -306,6 +306,15 @@ export const removeDocumentsFromKnowledgeIndex = (index: KnowledgeIndexStore, do
   updatedAt: new Date().toISOString(),
 });
 
+export const filterKnowledgeIndexByDocumentIds = (
+  index: KnowledgeIndexStore,
+  documentIds: Set<string>,
+): KnowledgeIndexStore => ({
+  documents: index.documents.filter((document) => documentIds.has(document.documentId)),
+  chunks: index.chunks.filter((chunk) => documentIds.has(chunk.documentId)),
+  updatedAt: index.updatedAt,
+});
+
 export const isDocumentKnowledgeIndexStale = (document: DocumentItem, index: KnowledgeIndexStore) => {
   const indexedDocument = index.documents.find((item) => item.documentId === document.id);
   if (!indexedDocument) return true;
