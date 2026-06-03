@@ -5,6 +5,7 @@ import { DocumentRightPanel } from "@/components/workspace/document-right-panel"
 import { DocumentTitleInput } from "@/components/workspace/document-title-input";
 import { DocumentVersionHistory } from "@/components/workspace/document-version-history";
 import { SaveStatus } from "@/components/workspace/save-status";
+import type { AuditLogItem } from "@/lib/audit-logs";
 import type { DocumentVersion } from "@/lib/document-versions";
 import type { DocumentItem, DocumentMetaUpdate, DraftDocument, SaveStatusValue } from "@/lib/documents";
 import type { WorkspaceMember, WorkspaceMemberInput } from "@/lib/members";
@@ -19,6 +20,7 @@ interface DocumentEditorPageProps {
   isDraft?: boolean;
   onBack?: () => void;
   versions?: DocumentVersion[];
+  auditLogs?: AuditLogItem[];
   onRestoreVersion?: (versionId: string) => void;
   onMetaChange?: (documentId: string, updates: DocumentMetaUpdate) => void;
   canManageDocumentMembers?: boolean;
@@ -38,6 +40,7 @@ export function DocumentEditorPage({
   isDraft = false,
   onBack,
   versions = [],
+  auditLogs = [],
   onRestoreVersion,
   onMetaChange,
   canManageDocumentMembers = false,
@@ -119,6 +122,7 @@ export function DocumentEditorPage({
         document={persistedDocument}
         contentJson={document.contentJson}
         members={members}
+        auditLogs={auditLogs}
         wordCount={wordCount}
         onMetaChange={onMetaChange ? (updates) => onMetaChange(documentId, updates) : undefined}
         canManageDocumentMembers={canManageDocumentMembers}

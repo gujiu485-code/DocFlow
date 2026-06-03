@@ -23,6 +23,17 @@ import {
   getAccessibleDocuments,
 } from "@/lib/document-access";
 import {
+  appendAuditLog,
+  createAuditLog,
+  describeMemberAccessChange,
+  getDocumentAuditLogs,
+  loadAuditLogs,
+  saveAuditLogs,
+  type AuditAction,
+  type AuditLogInput,
+  type AuditLogItem,
+} from "@/lib/audit-logs";
+import {
   getDocumentTemplate,
   getTemplateBodyContent,
   getTemplateBodyText,
@@ -102,8 +113,10 @@ export function DocumentLayout() {
   const [members, setMembers] = useState<WorkspaceMember[]>([]);
   const [documentVersions, setDocumentVersions] = useState<DocumentVersion[]>([]);
   const [knowledgeSyncLogs, setKnowledgeSyncLogs] = useState<KnowledgeSyncLog[]>([]);
+  const [auditLogs, setAuditLogs] = useState<AuditLogItem[]>([]);
   const [knowledgeIndex, setKnowledgeIndex] = useState<KnowledgeIndexStore>(() => createEmptyKnowledgeIndex());
   const [editorRevisionByDocumentId, setEditorRevisionByDocumentId] = useState<Record<string, number>>({});
+  const [contentAuditDocumentIds, setContentAuditDocumentIds] = useState<Set<string>>(new Set());
   const [documentFilter, setDocumentFilter] = useState<DocumentFilter>(defaultDocumentFilter);
 
   const persistDocuments = useDebouncedCallback((nextDocuments: DocumentItem[]) => {
@@ -127,6 +140,16 @@ export function DocumentLayout() {
     setKnowledgeSyncLogs((current) => {
       const nextLogs = updater(current);
       saveKnowledgeSyncLogs(nextLogs);
+      return nextLogs;
+    });
+  };
+
+  const recordAuditLog = (input: AuditLogInput) => {
+    if (!authSession) return;
+
+    setAuditLogs((current) => {
+      const nextLogs = appendAuditLog(current, createAuditLog(authSession, input));
+      saveAuditLogs(nextLogs);
       return nextLogs;
     });
   };
@@ -191,6 +214,7 @@ export function DocumentLayout() {
     setExpandedDocumentIds(loadedExpandedIds);
     setDocumentVersions(loadDocumentVersions());
     setKnowledgeSyncLogs(loadKnowledgeSyncLogs());
+    setAuditLogs(loadAuditLogs());
     setKnowledgeIndex(loadedKnowledgeIndex);
     setMembers(loadWorkspaceMembers());
     setWorkspaceReady(true);
@@ -229,6 +253,7 @@ export function DocumentLayout() {
   );
   const activeDocument = visibleDocuments.find((document) => document.id === activeDocumentId) ?? null;
   const activeDocumentVersions = activeDocument ? getDocumentVersions(documentVersions, activeDocument.id) : [];
+  const activeDocumentAuditLogs = activeDocument ? getDocumentAuditLogs(auditLogs, activeDocument.id) : [];
   const activeDraftDocument = draftDocument;
   const activeDraftDocumentId = activeDraftDocument?.id ?? null;
 
@@ -310,6 +335,10 @@ export function DocumentLayout() {
 
     const member = createWorkspaceMember(input);
     commitMembers((current) => [...current, member]);
+    recordAuditLog({
+      action: "member.create",
+      detail: `新增成员 ${member.name}`,
+    });
     return member;
   };
 
@@ -317,6 +346,7 @@ export function DocumentLayout() {
     if (!isAdminSession(authSession)) return;
 
     const now = new Date().toISOString();
+    const targetMember = members.find((member) => member.id === memberId);
 
     commitMembers((current) =>
       current.map((member) =>
@@ -327,15 +357,28 @@ export function DocumentLayout() {
               role: member.role === "owner" ? "owner" : updates.role ?? member.role,
               updatedAt: now,
             }
-          : member,
+        : member,
       ),
     );
+    if (targetMember) {
+      recordAuditLog({
+        action: "member.update",
+        detail: `修改成员 ${targetMember.name}`,
+      });
+    }
   };
 
   const deleteMember = (memberId: string) => {
     if (!isAdminSession(authSession)) return;
+    const targetMember = members.find((member) => member.id === memberId);
 
     commitMembers((current) => current.filter((member) => member.role === "owner" || member.id !== memberId));
+    if (targetMember) {
+      recordAuditLog({
+        action: "member.delete",
+        detail: `删除成员 ${targetMember.name}`,
+      });
+    }
   };
 
   const commitDraftDocumentValue = (nextDraftDocument: DraftDocument | null) => {
@@ -354,6 +397,11 @@ export function DocumentLayout() {
     const nextDocument = materializeDraftDocument(nextDraftDocument, siblingCount, authSession?.memberId);
 
     commitDocuments((current) => [...current, nextDocument], { immediate: true });
+    recordAuditLog({
+      action: "document.create",
+      document: nextDocument,
+      detail: nextDocument.parentId ? "创建子文档" : "创建顶级文档",
+    });
     setDraftDocument(null);
     setActiveDocumentId(nextDocument.id);
 
@@ -429,16 +477,25 @@ export function DocumentLayout() {
   const renameDocument = (documentId: string, title: string) => {
     const targetDocument = documents.find((document) => document.id === documentId && !document.deletedAt);
     if (!canAccessDocument(authSession, targetDocument)) return;
+    const nextTitle = title.trim() || "Untitled";
 
-    snapshotDocument(documents.find((document) => document.id === documentId && !document.deletedAt));
+    snapshotDocument(targetDocument);
 
     commitDocuments((current) =>
       current.map((document) =>
         document.id === documentId && !document.deletedAt
-          ? { ...document, title: title.trim() || "Untitled", updatedAt: new Date().toISOString() }
+          ? { ...document, title: nextTitle, updatedAt: new Date().toISOString() }
           : document,
       ),
     );
+
+    if (targetDocument.title !== nextTitle) {
+      recordAuditLog({
+        action: "document.rename",
+        document: { ...targetDocument, title: nextTitle },
+        detail: `由「${targetDocument.title || "无标题"}」改为「${nextTitle}」`,
+      });
+    }
   };
 
   const deleteDocument = (documentId: string) => {
@@ -463,6 +520,11 @@ export function DocumentLayout() {
     );
     commitKnowledgeIndex((current) => removeDocumentsFromKnowledgeIndex(current, idsToDelete));
     deleteDocumentsFromRemoteKnowledge(idsToDelete);
+    recordAuditLog({
+      action: "document.delete",
+      document: targetDocument,
+      detail: `移入垃圾桶，影响 ${idsToDelete.size} 篇文档`,
+    });
     setActiveDocumentId(nextActiveDocumentId);
     setExpandedDocumentIds((current) => {
       const next = new Set(current);
@@ -498,6 +560,11 @@ export function DocumentLayout() {
         }),
       { immediate: true },
     );
+    recordAuditLog({
+      action: "document.restore",
+      document: targetDocument,
+      detail: `从垃圾桶恢复，影响 ${idsToRestore.size} 篇文档`,
+    });
     setActiveDocumentId(documentId);
     setTrashOpen(false);
   };
@@ -518,6 +585,11 @@ export function DocumentLayout() {
     commitDocumentVersions((current) => removeDocumentVersions(current, idsToDelete));
     commitKnowledgeIndex((current) => removeDocumentsFromKnowledgeIndex(current, idsToDelete));
     deleteDocumentsFromRemoteKnowledge(idsToDelete);
+    recordAuditLog({
+      action: "document.permanent_delete",
+      document: targetDocument,
+      detail: `永久删除，影响 ${idsToDelete.size} 篇文档`,
+    });
     setActiveDocumentId(nextActiveDocumentId);
   };
 
@@ -575,7 +647,7 @@ export function DocumentLayout() {
     const targetDocument = documents.find((document) => document.id === sourceDocumentId && !document.deletedAt);
     if (!canAccessDocument(authSession, targetDocument)) return;
 
-    snapshotDocument(documents.find((document) => document.id === sourceDocumentId && !document.deletedAt));
+    snapshotDocument(targetDocument);
 
     commitDocuments((current) =>
       current.map((document) =>
@@ -590,6 +662,15 @@ export function DocumentLayout() {
           : document,
       ),
     );
+
+    if (!contentAuditDocumentIds.has(sourceDocumentId) && (targetDocument.contentText ?? "") !== payload.text) {
+      setContentAuditDocumentIds((current) => new Set(current).add(sourceDocumentId));
+      recordAuditLog({
+        action: "document.content.update",
+        document: targetDocument,
+        detail: "修改了正文内容",
+      });
+    }
   };
 
   const updateDocumentMeta = (documentId: string, updates: DocumentMetaUpdate) => {
@@ -597,6 +678,24 @@ export function DocumentLayout() {
     if (!canAccessDocument(authSession, targetDocument)) return;
 
     const now = new Date().toISOString();
+    const auditEntries: Array<{ action: AuditAction; detail?: string }> = [];
+
+    if ("status" in updates && updates.status !== targetDocument.status) {
+      auditEntries.push({ action: "document.status.update", detail: `状态改为 ${updates.status}` });
+    }
+    if ("tags" in updates) {
+      auditEntries.push({ action: "document.tags.update", detail: `标签数量 ${(updates.tags ?? []).length}` });
+    }
+    if ("summary" in updates && updates.summary !== targetDocument.summary) {
+      auditEntries.push({ action: "document.summary.update", detail: "更新了文档摘要" });
+    }
+    if ("ownerId" in updates && updates.ownerId !== targetDocument.ownerId) {
+      auditEntries.push({ action: "document.owner.update", detail: "修改了文档负责人" });
+    }
+    if ("memberAccess" in updates) {
+      const detail = describeMemberAccessChange(targetDocument.memberAccess, updates.memberAccess);
+      auditEntries.push({ action: "document.members.update", detail: detail || "更新了协作者权限" });
+    }
 
     commitDocuments((current) =>
       current.map((document) => {
@@ -615,6 +714,14 @@ export function DocumentLayout() {
         };
       }),
     );
+
+    for (const entry of auditEntries) {
+      recordAuditLog({
+        action: entry.action,
+        document: targetDocument,
+        detail: entry.detail,
+      });
+    }
   };
 
   const setDocumentKnowledgeStatus = (documentId: string, knowledgeStatus: DocumentItem["knowledgeStatus"]) => {
@@ -650,6 +757,11 @@ export function DocumentLayout() {
     }
 
     setDocumentKnowledgeStatus(documentId, "pending");
+    recordAuditLog({
+      action: "knowledge.sync",
+      document,
+      detail: "发起知识库同步",
+    });
     commitKnowledgeSyncLogs((current) =>
       appendKnowledgeSyncLog(current, createKnowledgeSyncLog(document, "pending", "文档已加入知识库同步队列。")),
     );
@@ -757,6 +869,11 @@ export function DocumentLayout() {
       summary,
       tags,
     });
+    recordAuditLog({
+      action: "document.metadata.generate",
+      document,
+      detail: `AI 生成摘要和 ${tags.length} 个标签`,
+    });
   };
 
   const restoreDocumentVersion = (versionId: string) => {
@@ -788,11 +905,25 @@ export function DocumentLayout() {
       ...current,
       [version.documentId]: (current[version.documentId] ?? 0) + 1,
     }));
+    recordAuditLog({
+      action: "document.version.restore",
+      document: targetDocument,
+      detail: `恢复到 ${new Date(version.createdAt).toLocaleString("zh-CN")}`,
+    });
     setActiveDocumentId(version.documentId);
   };
 
   const updateDraftTitle = (title: string) => {
     setDraftDocument((current) => (current ? { ...current, title } : current));
+  };
+
+  const handleLogin = (session: AuthSession) => {
+    setAuthSession(session);
+    setAuditLogs((current) => {
+      const nextLogs = appendAuditLog(current, createAuditLog(session, { action: "login", detail: "进入 DocFlow AI 工作区" }));
+      saveAuditLogs(nextLogs);
+      return nextLogs;
+    });
   };
 
   if (!workspaceReady) {
@@ -804,11 +935,12 @@ export function DocumentLayout() {
   }
 
   if (!authSession) {
-    return <DocumentLoginPage onLogin={setAuthSession} />;
+    return <DocumentLoginPage onLogin={handleLogin} />;
   }
 
   const canManageMembers = isAdminSession(authSession);
   const logout = () => {
+    recordAuditLog({ action: "logout", detail: "退出 DocFlow AI 工作区" });
     clearAuthSession();
     setAuthSession(null);
     setMembersOpen(false);
@@ -868,6 +1000,7 @@ export function DocumentLayout() {
           onTitleChange={(title) => renameDocument(activeDocument.id, title)}
           onContentChange={updateDocumentContent}
           versions={activeDocumentVersions}
+          auditLogs={activeDocumentAuditLogs}
           onRestoreVersion={restoreDocumentVersion}
           onMetaChange={updateDocumentMeta}
           canManageDocumentMembers={canManageMembers}

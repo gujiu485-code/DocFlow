@@ -1,11 +1,13 @@
 "use client";
 
 import { Button } from "@/components/tailwind/ui/button";
+import { DocumentActivityPanel } from "@/components/workspace/document-activity-panel";
 import { DocumentMembersPanel } from "@/components/workspace/document-members-panel";
 import { DocumentMetaInfo } from "@/components/workspace/document-meta-info";
 import { DocumentStatusSelect } from "@/components/workspace/document-status-select";
 import { DocumentTagInput } from "@/components/workspace/document-tag-input";
 import { KnowledgeStatusBadge } from "@/components/workspace/knowledge-status-badge";
+import type { AuditLogItem } from "@/lib/audit-logs";
 import type { DocumentItem, DocumentMetaUpdate } from "@/lib/documents";
 import type { WorkspaceMember, WorkspaceMemberInput } from "@/lib/members";
 import { DatabaseZap, FileSliders, ListChecks, Sparkles, TriangleAlert } from "lucide-react";
@@ -15,6 +17,7 @@ import { useState } from "react";
 interface DocumentPropertiesPanelProps {
   document?: DocumentItem;
   members: WorkspaceMember[];
+  auditLogs: AuditLogItem[];
   wordCount: number;
   onChange?: (updates: DocumentMetaUpdate) => void;
   canManageDocumentMembers?: boolean;
@@ -27,6 +30,7 @@ interface DocumentPropertiesPanelProps {
 export function DocumentPropertiesPanel({
   document,
   members,
+  auditLogs,
   wordCount,
   onChange,
   canManageDocumentMembers = false,
@@ -119,6 +123,11 @@ export function DocumentPropertiesPanel({
           className="min-h-28 w-full resize-none rounded-md border bg-background px-3 py-2 text-sm leading-6 outline-none focus:border-foreground"
           placeholder="填写这篇文档的简要说明，后续可以接入 AI 自动生成。"
         />
+      </section>
+
+      <section className="space-y-3">
+        <div className="text-xs font-medium text-muted-foreground">文档动态</div>
+        <DocumentActivityPanel logs={auditLogs} />
       </section>
 
       <section className="space-y-3">

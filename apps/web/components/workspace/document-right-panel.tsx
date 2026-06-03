@@ -2,6 +2,7 @@
 
 import { DocumentOutline } from "@/components/workspace/document-outline";
 import { DocumentPropertiesPanel } from "@/components/workspace/document-properties-panel";
+import type { AuditLogItem } from "@/lib/audit-logs";
 import type { DocumentItem, DocumentMetaUpdate } from "@/lib/documents";
 import type { WorkspaceMember, WorkspaceMemberInput } from "@/lib/members";
 import { cn } from "@/lib/utils";
@@ -15,6 +16,7 @@ interface DocumentRightPanelProps {
   document?: DocumentItem;
   contentJson: any;
   members: WorkspaceMember[];
+  auditLogs: AuditLogItem[];
   wordCount: number;
   onMetaChange?: (updates: DocumentMetaUpdate) => void;
   canManageDocumentMembers?: boolean;
@@ -28,6 +30,7 @@ export function DocumentRightPanel({
   document,
   contentJson,
   members,
+  auditLogs,
   wordCount,
   onMetaChange,
   canManageDocumentMembers = false,
@@ -139,6 +142,7 @@ export function DocumentRightPanel({
           <DocumentPropertiesPanel
             document={document}
             members={members}
+            auditLogs={auditLogs}
             wordCount={wordCount}
             onChange={onMetaChange}
             canManageDocumentMembers={canManageDocumentMembers}
