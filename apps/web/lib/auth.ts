@@ -17,7 +17,6 @@ export type LoginPayload = {
   password: string;
 };
 
-export const AUTH_SESSION_STORAGE_KEY = "docflow-auth-session";
 export const DEFAULT_USER_MEMBER_ID = "member-tech";
 
 export const authRoleLabels: Record<AuthRole, string> = {
@@ -40,52 +39,53 @@ export const demoAccounts: Record<AuthRole, { email: string; password: string; n
   },
 };
 
-export const createAuthSession = ({ role, email, password }: LoginPayload): AuthSession => {
-  const account = demoAccounts[role];
-  const normalizedEmail = email.trim().toLowerCase();
+export const loginWithPassword = async (payload: LoginPayload): Promise<AuthSession> => {
+  const response = await fetch("/api/auth/login", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    credentials: "include",
+    body: JSON.stringify(payload),
+  });
+  const result = await response.json().catch(() => null);
 
-  // 第一版是前端本地演示登录；真实项目中这里应替换为后端登录接口。
-  if (normalizedEmail !== account.email || password !== account.password) {
-    throw new Error("账号或密码不正确，请检查当前选择的登录角色。");
+  if (!response.ok) {
+    throw new Error(typeof result?.error === "string" ? result.error : "登录失败，请稍后重试。");
   }
 
-  return {
-    id: `${role}-${Date.now()}`,
-    memberId: account.memberId,
-    name: account.name,
-    email: account.email,
-    role,
-    loggedInAt: new Date().toISOString(),
-  };
+  return normalizeAuthSession(result?.session);
 };
 
-export const loadAuthSession = (): AuthSession | null => {
-  if (typeof window === "undefined") return null;
-
+export const loadAuthSession = async (): Promise<AuthSession | null> => {
   try {
-    const raw = window.localStorage.getItem(AUTH_SESSION_STORAGE_KEY);
-    if (!raw) return null;
-    return normalizeAuthSession(JSON.parse(raw));
+    const response = await fetch("/api/auth/me", {
+      method: "GET",
+      credentials: "include",
+      cache: "no-store",
+    });
+
+    if (!response.ok) return null;
+    const result = await response.json().catch(() => null);
+    return result?.session ? normalizeAuthSession(result.session) : null;
   } catch {
-    clearAuthSession();
     return null;
   }
 };
 
-export const saveAuthSession = (session: AuthSession) => {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(AUTH_SESSION_STORAGE_KEY, JSON.stringify(session));
-};
-
-export const clearAuthSession = () => {
-  if (typeof window === "undefined") return;
-  window.localStorage.removeItem(AUTH_SESSION_STORAGE_KEY);
+export const clearAuthSession = async () => {
+  await fetch("/api/auth/logout", {
+    method: "POST",
+    credentials: "include",
+  }).catch(() => null);
 };
 
 export const isAdminSession = (session: AuthSession | null) => session?.role === "admin";
 
-function normalizeAuthSession(value: Partial<AuthSession> & Record<string, unknown>): AuthSession | null {
-  if (value.role !== "admin" && value.role !== "user") return null;
+function normalizeAuthSession(value: Partial<AuthSession> & Record<string, unknown>): AuthSession {
+  if (!value || (value.role !== "admin" && value.role !== "user")) {
+    throw new Error("登录状态无效，请重新登录。");
+  }
 
   const account = demoAccounts[value.role];
 

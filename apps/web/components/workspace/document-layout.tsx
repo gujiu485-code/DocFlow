@@ -185,8 +185,7 @@ export function DocumentLayout() {
   };
 
   useEffect(() => {
-    setAuthSession(loadAuthSession());
-
+    let cancelled = false;
     const loadedKnowledgeIndex = loadKnowledgeIndex();
     const loadedDocuments = loadDocuments();
     let recoveredPendingStatus = false;
@@ -209,15 +208,25 @@ export function DocumentLayout() {
       saveDocuments(recoveredDocuments);
     }
 
-    setDocuments(recoveredDocuments);
-    setActiveDocumentId(null);
-    setExpandedDocumentIds(loadedExpandedIds);
-    setDocumentVersions(loadDocumentVersions());
-    setKnowledgeSyncLogs(loadKnowledgeSyncLogs());
-    setAuditLogs(loadAuditLogs());
-    setKnowledgeIndex(loadedKnowledgeIndex);
-    setMembers(loadWorkspaceMembers());
-    setWorkspaceReady(true);
+    void (async () => {
+      const session = await loadAuthSession();
+      if (cancelled) return;
+
+      setAuthSession(session);
+      setDocuments(recoveredDocuments);
+      setActiveDocumentId(null);
+      setExpandedDocumentIds(loadedExpandedIds);
+      setDocumentVersions(loadDocumentVersions());
+      setKnowledgeSyncLogs(loadKnowledgeSyncLogs());
+      setAuditLogs(loadAuditLogs());
+      setKnowledgeIndex(loadedKnowledgeIndex);
+      setMembers(loadWorkspaceMembers());
+      setWorkspaceReady(true);
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -941,7 +950,7 @@ export function DocumentLayout() {
   const canManageMembers = isAdminSession(authSession);
   const logout = () => {
     recordAuditLog({ action: "logout", detail: "退出 DocFlow AI 工作区" });
-    clearAuthSession();
+    void clearAuthSession();
     setAuthSession(null);
     setMembersOpen(false);
     setSyncCenterOpen(false);
