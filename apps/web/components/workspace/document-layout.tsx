@@ -94,6 +94,7 @@ import {
   type WorkspaceMember,
   type WorkspaceMemberInput,
 } from "@/lib/members";
+import { loadWorkspaceStateFromDatabase, saveWorkspaceStateToDatabase } from "@/lib/workspace-state";
 import { useDebouncedCallback } from "use-debounce";
 import { useEffect, useMemo, useState } from "react";
 import { arrayMove } from "@dnd-kit/sortable";
@@ -140,6 +141,9 @@ export function DocumentLayout() {
     setDocumentVersions((current) => {
       const nextVersions = updater(current);
       saveDocumentVersions(nextVersions);
+      void saveWorkspaceStateToDatabase({ versions: nextVersions }).catch((error) => {
+        console.error("数据库文档版本保存失败，已保留浏览器本地副本。", error);
+      });
       return nextVersions;
     });
   };
@@ -148,6 +152,9 @@ export function DocumentLayout() {
     setKnowledgeSyncLogs((current) => {
       const nextLogs = updater(current);
       saveKnowledgeSyncLogs(nextLogs);
+      void saveWorkspaceStateToDatabase({ knowledgeSyncLogs: nextLogs }).catch((error) => {
+        console.error("数据库知识库同步日志保存失败，已保留浏览器本地副本。", error);
+      });
       return nextLogs;
     });
   };
@@ -158,6 +165,9 @@ export function DocumentLayout() {
     setAuditLogs((current) => {
       const nextLogs = appendAuditLog(current, createAuditLog(authSession, input));
       saveAuditLogs(nextLogs);
+      void saveWorkspaceStateToDatabase({ auditLogs: nextLogs }).catch((error) => {
+        console.error("数据库审计日志保存失败，已保留浏览器本地副本。", error);
+      });
       return nextLogs;
     });
   };
@@ -166,6 +176,9 @@ export function DocumentLayout() {
     setKnowledgeIndex((current) => {
       const nextIndex = updater(current);
       saveKnowledgeIndex(nextIndex);
+      void saveWorkspaceStateToDatabase({ knowledgeIndex: nextIndex }).catch((error) => {
+        console.error("数据库知识库索引保存失败，已保留浏览器本地副本。", error);
+      });
       return nextIndex;
     });
   };
@@ -194,12 +207,16 @@ export function DocumentLayout() {
 
   useEffect(() => {
     let cancelled = false;
-    const loadedKnowledgeIndex = loadKnowledgeIndex();
+    let loadedKnowledgeIndex = loadKnowledgeIndex();
     const loadedExpandedIds = loadExpandedDocumentIds();
 
     void (async () => {
       const session = await loadAuthSession();
       let loadedDocuments = loadDocuments();
+      let loadedVersions = loadDocumentVersions();
+      let loadedKnowledgeSyncLogs = loadKnowledgeSyncLogs();
+      let loadedAuditLogs = loadAuditLogs();
+      let loadedMembers = loadWorkspaceMembers();
 
       try {
         const databaseDocuments = await loadDocumentsFromDatabase();
@@ -209,6 +226,24 @@ export function DocumentLayout() {
         }
       } catch (error) {
         console.error("数据库文档加载失败，已改用浏览器本地缓存。", error);
+      }
+
+      try {
+        const databaseState = await loadWorkspaceStateFromDatabase();
+        if (databaseState) {
+          loadedVersions = databaseState.versions;
+          loadedKnowledgeSyncLogs = databaseState.knowledgeSyncLogs;
+          loadedAuditLogs = databaseState.auditLogs;
+          loadedKnowledgeIndex = databaseState.knowledgeIndex;
+          loadedMembers = databaseState.members;
+          saveDocumentVersions(loadedVersions);
+          saveKnowledgeSyncLogs(loadedKnowledgeSyncLogs);
+          saveAuditLogs(loadedAuditLogs);
+          saveKnowledgeIndex(loadedKnowledgeIndex);
+          saveWorkspaceMembers(loadedMembers);
+        }
+      } catch (error) {
+        console.error("数据库工作区状态加载失败，已改用浏览器本地缓存。", error);
       }
 
       let recoveredPendingStatus = false;
@@ -242,11 +277,11 @@ export function DocumentLayout() {
       setDocuments(recoveredDocuments);
       setActiveDocumentId(null);
       setExpandedDocumentIds(loadedExpandedIds);
-      setDocumentVersions(loadDocumentVersions());
-      setKnowledgeSyncLogs(loadKnowledgeSyncLogs());
-      setAuditLogs(loadAuditLogs());
+      setDocumentVersions(loadedVersions);
+      setKnowledgeSyncLogs(loadedKnowledgeSyncLogs);
+      setAuditLogs(loadedAuditLogs);
       setKnowledgeIndex(loadedKnowledgeIndex);
-      setMembers(loadWorkspaceMembers());
+      setMembers(loadedMembers);
       setWorkspaceReady(true);
     })();
 
@@ -363,6 +398,9 @@ export function DocumentLayout() {
     setMembers((current) => {
       const nextMembers = sortWorkspaceMembers(updater(current));
       saveWorkspaceMembers(nextMembers);
+      void saveWorkspaceStateToDatabase({ members: nextMembers }).catch((error) => {
+        console.error("数据库成员保存失败，已保留浏览器本地副本。", error);
+      });
       return nextMembers;
     });
   };

@@ -120,7 +120,9 @@ export const describeMemberAccessChange = (
   const next = new Map(nextAccess.map((access) => [access.memberId, access.role]));
   const added = [...next.keys()].filter((memberId) => !previous.has(memberId)).length;
   const removed = [...previous.keys()].filter((memberId) => !next.has(memberId)).length;
-  const changed = [...next.entries()].filter(([memberId, role]) => previous.has(memberId) && previous.get(memberId) !== role).length;
+  const changed = [...next.entries()].filter(
+    ([memberId, role]) => previous.has(memberId) && previous.get(memberId) !== role,
+  ).length;
 
   return [
     added ? `新增 ${added} 位协作者` : "",
@@ -133,7 +135,7 @@ export const describeMemberAccessChange = (
 
 export const formatAuditActor = (log: AuditLogItem) => `${log.actorName}（${authRoleLabels[log.actorRole]}）`;
 
-function normalizeAuditLog(value: Partial<AuditLogItem> & Record<string, unknown>): AuditLogItem | null {
+export function normalizeAuditLog(value: Partial<AuditLogItem> & Record<string, unknown>): AuditLogItem | null {
   if (typeof value.id !== "string" || !value.id) return null;
   if (typeof value.action !== "string" || !(value.action in auditActionLabels)) return null;
   const role = value.actorRole === "admin" || value.actorRole === "user" ? value.actorRole : "user";
@@ -144,7 +146,10 @@ function normalizeAuditLog(value: Partial<AuditLogItem> & Record<string, unknown
     actorName: typeof value.actorName === "string" && value.actorName ? value.actorName : "未知用户",
     actorRole: role,
     action: value.action as AuditAction,
-    actionLabel: typeof value.actionLabel === "string" && value.actionLabel ? value.actionLabel : auditActionLabels[value.action as AuditAction],
+    actionLabel:
+      typeof value.actionLabel === "string" && value.actionLabel
+        ? value.actionLabel
+        : auditActionLabels[value.action as AuditAction],
     documentId: typeof value.documentId === "string" ? value.documentId : null,
     documentTitle: typeof value.documentTitle === "string" ? value.documentTitle : undefined,
     detail: typeof value.detail === "string" ? value.detail : undefined,

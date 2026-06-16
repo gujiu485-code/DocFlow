@@ -1,5 +1,6 @@
 import { DEFAULT_USER_MEMBER_ID, type AuthRole, type AuthSession, type LoginPayload } from "@/lib/auth";
 import { DEFAULT_WORKSPACE_MEMBER_ID } from "@/lib/members";
+import { getPrisma, isDatabaseConfigured } from "@/lib/prisma";
 import { createHmac, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 
 export const AUTH_COOKIE_NAME = "docflow_auth";
@@ -39,8 +40,34 @@ const users: AuthUser[] = [
   },
 ];
 
-export const authenticateUser = ({ email, password, role }: LoginPayload): AuthSession | null => {
+export const authenticateUser = async ({ email, password, role }: LoginPayload): Promise<AuthSession | null> => {
   const normalizedEmail = email.trim().toLowerCase();
+
+  if (isDatabaseConfigured()) {
+    try {
+      await ensureDefaultUsers();
+      const user = await getPrisma().user.findUnique({
+        where: {
+          email: normalizedEmail,
+        },
+      });
+
+      if (!user || user.role !== role) return null;
+      if (!verifyPassword(password, user.passwordHash)) return null;
+
+      return {
+        id: user.id,
+        memberId: user.memberId,
+        name: user.name,
+        email: user.email,
+        role: user.role === "admin" ? "admin" : "user",
+        loggedInAt: new Date().toISOString(),
+      };
+    } catch (error) {
+      console.error("数据库认证失败，已降级使用内置演示账号。", error);
+    }
+  }
+
   const user = users.find((item) => item.email === normalizedEmail);
   if (!user || user.role !== role) return null;
   if (!verifyPassword(password, user.passwordHash)) return null;
@@ -53,6 +80,24 @@ export const authenticateUser = ({ email, password, role }: LoginPayload): AuthS
     role: user.role,
     loggedInAt: new Date().toISOString(),
   };
+};
+
+const ensureDefaultUsers = async () => {
+  const prisma = getPrisma();
+  const existingCount = await prisma.user.count();
+  if (existingCount > 0) return;
+
+  await prisma.user.createMany({
+    data: users.map((user) => ({
+      id: user.id,
+      memberId: user.memberId,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      passwordHash: user.passwordHash,
+    })),
+    skipDuplicates: true,
+  });
 };
 
 export const createSessionToken = (session: AuthSession) => {
@@ -123,13 +168,14 @@ const normalizeSessionPayload = (payload: Partial<AuthTokenPayload>): AuthSessio
 };
 
 const signValue = (value: string) =>
-  createHmac("sha256", process.env.AUTH_SECRET || "docflow-dev-auth-secret-change-me").update(value).digest("base64url");
+  createHmac("sha256", process.env.AUTH_SECRET || "docflow-dev-auth-secret-change-me")
+    .update(value)
+    .digest("base64url");
 
 const safeEqual = (left: string, right: string) => {
   const leftBuffer = Buffer.from(left);
   const rightBuffer = Buffer.from(right);
   return (
-    leftBuffer.length === rightBuffer.length &&
-    timingSafeEqual(new Uint8Array(leftBuffer), new Uint8Array(rightBuffer))
+    leftBuffer.length === rightBuffer.length && timingSafeEqual(new Uint8Array(leftBuffer), new Uint8Array(rightBuffer))
   );
 };

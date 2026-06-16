@@ -1,4 +1,10 @@
-import { createDefaultDocuments, normalizeDocument, normalizeSortOrder, type DocumentItem } from "@/lib/documents";
+import {
+  createDefaultDocuments,
+  normalizeDocument,
+  normalizeSortOrder,
+  type DocumentItem,
+  type DocumentMemberAccess,
+} from "@/lib/documents";
 import { getPrisma, isDatabaseConfigured } from "@/lib/prisma";
 
 export const runtime = "nodejs";
@@ -21,7 +27,7 @@ const toDocumentResponse = (document: {
   status: string;
   knowledgeStatus: string;
   ownerId: string | null;
-  memberAccess: unknown;
+  memberAccess?: DocumentMemberAccess[];
   deletedAt: Date | null;
   createdAt: Date;
   updatedAt: Date;
@@ -38,7 +44,7 @@ const toDocumentResponse = (document: {
     status: document.status,
     knowledgeStatus: document.knowledgeStatus,
     ownerId: document.ownerId,
-    memberAccess: document.memberAccess,
+    memberAccess: document.memberAccess ?? [],
     deletedAt: document.deletedAt?.toISOString() ?? null,
     createdAt: document.createdAt.toISOString(),
     updatedAt: document.updatedAt.toISOString(),
@@ -56,11 +62,42 @@ const toDatabaseDocument = (document: DocumentItem) => ({
   status: document.status ?? "draft",
   knowledgeStatus: document.knowledgeStatus ?? "none",
   ownerId: document.ownerId ?? null,
-  memberAccess: document.memberAccess ?? [],
   deletedAt: document.deletedAt ? parseDate(document.deletedAt) : null,
   createdAt: parseDate(document.createdAt),
   updatedAt: parseDate(document.updatedAt),
 });
+
+const normalizeDocumentAccess = (document: DocumentItem) =>
+  [...new Map((document.memberAccess ?? []).map((access) => [access.memberId, access.role])).entries()]
+    .filter(([memberId]) => Boolean(memberId.trim()))
+    .map(([memberId, role]) => ({
+      documentId: document.id,
+      memberId,
+      role: role === "editor" ? "editor" : "viewer",
+    }));
+
+const attachDocumentAccess = (
+  documents: Array<Omit<Parameters<typeof toDocumentResponse>[0], "memberAccess">>,
+  accessRows: Array<{ documentId: string; memberId: string; role: string }>,
+) => {
+  const accessByDocumentId = new Map<string, DocumentMemberAccess[]>();
+
+  for (const access of accessRows) {
+    const current = accessByDocumentId.get(access.documentId) ?? [];
+    current.push({
+      memberId: access.memberId,
+      role: access.role === "editor" ? "editor" : "viewer",
+    });
+    accessByDocumentId.set(access.documentId, current);
+  }
+
+  return documents.map((document) =>
+    toDocumentResponse({
+      ...document,
+      memberAccess: accessByDocumentId.get(document.id) ?? [],
+    }),
+  );
+};
 
 const normalizeDocumentsPayload = (value: unknown) =>
   (Array.isArray(value) ? value : [])
@@ -107,9 +144,17 @@ export async function GET() {
       });
     }
 
+    const accessRows = await prisma.documentAccess.findMany({
+      where: {
+        documentId: {
+          in: documents.map((document) => document.id),
+        },
+      },
+    });
+
     return Response.json({
       enabled: true,
-      documents: normalizeSortOrder(documents.map(toDocumentResponse)),
+      documents: normalizeSortOrder(attachDocumentAccess(documents, accessRows)),
     });
   } catch (error) {
     console.error("数据库文档加载失败", error);
@@ -143,7 +188,28 @@ export async function PUT(req: Request) {
           create: data,
           update: data,
         });
+
+        await transaction.documentAccess.deleteMany({
+          where: {
+            documentId: data.id,
+          },
+        });
+
+        const accessRows = normalizeDocumentAccess(document);
+        if (accessRows.length) {
+          await transaction.documentAccess.createMany({
+            data: accessRows,
+          });
+        }
       }
+
+      await transaction.documentAccess.deleteMany({
+        where: {
+          documentId: {
+            notIn: documentIds.length ? documentIds : ["__docflow_empty_document_set__"],
+          },
+        },
+      });
 
       await transaction.document.deleteMany({
         where: {

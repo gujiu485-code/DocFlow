@@ -74,7 +74,9 @@ const toEditorContentNode = (value: unknown): EditorContentNode | null => {
     text: typeof value.text === "string" ? value.text : undefined,
     attrs: isRecord(value.attrs) ? value.attrs : undefined,
     content: Array.isArray(value.content)
-      ? value.content.map((item) => toEditorContentNode(item)).filter((item): item is EditorContentNode => Boolean(item))
+      ? value.content
+          .map((item) => toEditorContentNode(item))
+          .filter((item): item is EditorContentNode => Boolean(item))
       : undefined,
   };
 };
@@ -92,11 +94,7 @@ const getHeadingLevel = (node: EditorContentNode) => {
   return typeof level === "number" && Number.isFinite(level) ? Math.max(1, Math.min(level, 6)) : 1;
 };
 
-const collectKnowledgeBlocks = (
-  node: EditorContentNode,
-  result: KnowledgeBlock[],
-  state: HeadingState,
-) => {
+const collectKnowledgeBlocks = (node: EditorContentNode, result: KnowledgeBlock[], state: HeadingState) => {
   const text = getNodeText(node).replace(/\s+/g, " ").trim();
 
   if (node.type === "heading") {
@@ -225,7 +223,10 @@ const splitTextByLength = (text: string, maxLength: number) => {
   return pieces;
 };
 
-export const buildDocumentKnowledgeIndex = (document: DocumentItem, maxChunkLength = 800): DocumentKnowledgeIndexPayload => {
+export const buildDocumentKnowledgeIndex = (
+  document: DocumentItem,
+  maxChunkLength = 800,
+): DocumentKnowledgeIndexPayload => {
   const now = new Date().toISOString();
   const contentHash = createDocumentContentHash(document);
   const blocks = extractKnowledgeBlocks(document);
@@ -300,7 +301,10 @@ export const upsertDocumentKnowledgeIndex = (
   };
 };
 
-export const removeDocumentsFromKnowledgeIndex = (index: KnowledgeIndexStore, documentIds: Set<string>): KnowledgeIndexStore => ({
+export const removeDocumentsFromKnowledgeIndex = (
+  index: KnowledgeIndexStore,
+  documentIds: Set<string>,
+): KnowledgeIndexStore => ({
   documents: index.documents.filter((document) => !documentIds.has(document.documentId)),
   chunks: index.chunks.filter((chunk) => !documentIds.has(chunk.documentId)),
   updatedAt: new Date().toISOString(),
@@ -321,7 +325,7 @@ export const isDocumentKnowledgeIndexStale = (document: DocumentItem, index: Kno
   return indexedDocument.contentHash !== createDocumentContentHash(document);
 };
 
-const normalizeKnowledgeIndexedDocument = (
+export const normalizeKnowledgeIndexedDocument = (
   value: Partial<KnowledgeIndexedDocument> & Record<string, unknown>,
 ): KnowledgeIndexedDocument | null => {
   if (typeof value.documentId !== "string") return null;
@@ -335,7 +339,9 @@ const normalizeKnowledgeIndexedDocument = (
   };
 };
 
-const normalizeKnowledgeChunk = (value: Partial<KnowledgeChunk> & Record<string, unknown>): KnowledgeChunk | null => {
+export const normalizeKnowledgeChunk = (
+  value: Partial<KnowledgeChunk> & Record<string, unknown>,
+): KnowledgeChunk | null => {
   if (typeof value.documentId !== "string" || typeof value.text !== "string") return null;
 
   return {
@@ -368,7 +374,9 @@ export const loadKnowledgeIndex = (): KnowledgeIndexStore => {
             .filter((item): item is KnowledgeIndexedDocument => Boolean(item))
         : [],
       chunks: Array.isArray(parsed.chunks)
-        ? parsed.chunks.map((item) => normalizeKnowledgeChunk(item)).filter((item): item is KnowledgeChunk => Boolean(item))
+        ? parsed.chunks
+            .map((item) => normalizeKnowledgeChunk(item))
+            .filter((item): item is KnowledgeChunk => Boolean(item))
         : [],
       updatedAt: typeof parsed.updatedAt === "string" ? parsed.updatedAt : new Date().toISOString(),
     };
@@ -420,7 +428,11 @@ export const searchKnowledgeChunks = (chunks: KnowledgeChunk[], keyword: string)
     .slice(0, 20);
 };
 
-export const getRelevantKnowledgeChunks = (chunks: KnowledgeChunk[], keyword: string, limit = 5): KnowledgeSearchResult[] => {
+export const getRelevantKnowledgeChunks = (
+  chunks: KnowledgeChunk[],
+  keyword: string,
+  limit = 5,
+): KnowledgeSearchResult[] => {
   const matchedChunks = searchKnowledgeChunks(chunks, keyword).slice(0, limit);
   if (matchedChunks.length) return matchedChunks;
   return getFallbackKnowledgeChunks(chunks, limit);
@@ -463,21 +475,13 @@ const createSearchTerms = (keyword: string) => {
   return [...terms].filter((term) => !ignoredSearchTerms.has(term));
 };
 
-const ignoredSearchTerms = new Set([
-  "什么",
-  "哪些",
-  "如何",
-  "怎么",
-  "这个",
-  "那个",
-  "一下",
-  "相关",
-  "内容",
-]);
+const ignoredSearchTerms = new Set(["什么", "哪些", "如何", "怎么", "这个", "那个", "一下", "相关", "内容"]);
 
 const getKnowledgeSearchSnippet = (text: string, keyword: string, terms: string[] = []) => {
   const normalizedText = text.toLowerCase();
-  const hitKeyword = normalizedText.includes(keyword) ? keyword : terms.find((term) => normalizedText.includes(term)) ?? keyword;
+  const hitKeyword = normalizedText.includes(keyword)
+    ? keyword
+    : (terms.find((term) => normalizedText.includes(term)) ?? keyword);
   const hitIndex = normalizedText.indexOf(hitKeyword);
   if (hitIndex < 0) return text.slice(0, 120);
 

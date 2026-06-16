@@ -19,7 +19,6 @@ model Document {
   status          String    @default("draft")
   knowledgeStatus String    @default("none") @map("knowledge_status")
   ownerId         String?   @map("owner_id")
-  memberAccess    Json      @default("[]") @map("member_access")
   deletedAt       DateTime? @map("deleted_at")
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
@@ -28,4 +27,113 @@ model Document {
   @@index([ownerId])
   @@index([deletedAt])
   @@map("documents")
+}
+
+model User {
+  id           String   @id
+  memberId     String   @map("member_id")
+  name         String
+  email        String   @unique
+  role         String   @default("user")
+  passwordHash String   @map("password_hash")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@index([memberId])
+  @@index([role])
+  @@map("users")
+}
+
+model DocumentAccess {
+  documentId String   @map("document_id")
+  memberId   String   @map("member_id")
+  role       String   @default("viewer")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@id([documentId, memberId])
+  @@index([memberId])
+  @@map("document_access")
+}
+
+model WorkspaceMember {
+  id          String   @id
+  name        String
+  email       String
+  role        String   @default("member")
+  avatarColor String   @map("avatar_color")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([role])
+  @@map("workspace_members")
+}
+
+model DocumentVersion {
+  id          String   @id
+  documentId  String   @map("document_id")
+  title       String   @default("")
+  contentJson Json     @map("content_json")
+  contentText String   @default("") @map("content_text")
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([documentId])
+  @@index([createdAt])
+  @@map("document_versions")
+}
+
+model AuditLog {
+  id            String   @id
+  actorId       String   @map("actor_id")
+  actorName     String   @map("actor_name")
+  actorRole     String   @map("actor_role")
+  action        String
+  actionLabel   String   @map("action_label")
+  documentId    String?  @map("document_id")
+  documentTitle String?  @map("document_title")
+  detail        String?
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([documentId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+model KnowledgeIndexedDocument {
+  documentId  String   @id @map("document_id")
+  title       String
+  contentHash String   @map("content_hash")
+  chunkCount  Int      @default(0) @map("chunk_count")
+  indexedAt   DateTime @map("indexed_at")
+
+  @@map("knowledge_index_documents")
+}
+
+model KnowledgeChunk {
+  id            String   @id
+  documentId    String   @map("document_id")
+  documentTitle String   @map("document_title")
+  chunkIndex    Int      @default(0) @map("chunk_index")
+  text          String
+  headingPath   String[] @default([]) @map("heading_path")
+  contentHash   String   @map("content_hash")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  @@index([documentId])
+  @@index([contentHash])
+  @@map("knowledge_chunks")
+}
+
+model KnowledgeSyncLog {
+  id            String   @id
+  documentId    String   @map("document_id")
+  documentTitle String   @map("document_title")
+  status        String   @default("pending")
+  message       String
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([documentId])
+  @@index([createdAt])
+  @@map("knowledge_sync_logs")
 }

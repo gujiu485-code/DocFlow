@@ -28,7 +28,9 @@ const createLogId = () => {
   return `sync-log-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 };
 
-const normalizeKnowledgeSyncLog = (value: Partial<KnowledgeSyncLog> & Record<string, unknown>): KnowledgeSyncLog => ({
+export const normalizeKnowledgeSyncLog = (
+  value: Partial<KnowledgeSyncLog> & Record<string, unknown>,
+): KnowledgeSyncLog => ({
   id: typeof value.id === "string" ? value.id : createLogId(),
   documentId: typeof value.documentId === "string" ? value.documentId : "",
   documentTitle: typeof value.documentTitle === "string" ? value.documentTitle : "无标题",
@@ -77,7 +79,9 @@ export const getKnowledgeSyncCandidates = (documents: DocumentItem[], knowledgeI
     .filter((document) => {
       const knowledgeStatus = document.knowledgeStatus ?? "none";
       if (["none", "failed", "outdated"].includes(knowledgeStatus)) return true;
-      return knowledgeStatus === "indexed" && knowledgeIndex ? isDocumentKnowledgeIndexStale(document, knowledgeIndex) : false;
+      return knowledgeStatus === "indexed" && knowledgeIndex
+        ? isDocumentKnowledgeIndexStale(document, knowledgeIndex)
+        : false;
     })
     .sort((a, b) => {
       const priority: Record<string, number> = {

@@ -11,7 +11,7 @@ export type DocumentVersion = {
 
 export const DOCUMENT_VERSIONS_STORAGE_KEY = "docflow-document-versions";
 
-export const cloneDocumentContent = <T,>(value: T): T =>
+export const cloneDocumentContent = <T>(value: T): T =>
   value === undefined ? value : (JSON.parse(JSON.stringify(value)) as T);
 
 const createVersionId = () => {
@@ -22,7 +22,9 @@ const createVersionId = () => {
   return `version-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 };
 
-const normalizeVersion = (value: Partial<DocumentVersion> & Record<string, unknown>): DocumentVersion | null => {
+export const normalizeDocumentVersion = (
+  value: Partial<DocumentVersion> & Record<string, unknown>,
+): DocumentVersion | null => {
   if (typeof value.documentId !== "string" || !value.documentId) return null;
 
   return {
@@ -42,7 +44,9 @@ export const loadDocumentVersions = (): DocumentVersion[] => {
     const raw = window.localStorage.getItem(DOCUMENT_VERSIONS_STORAGE_KEY);
     const parsed = raw ? JSON.parse(raw) : [];
     if (!Array.isArray(parsed)) return [];
-    return parsed.map((item) => normalizeVersion(item)).filter((item): item is DocumentVersion => Boolean(item));
+    return parsed
+      .map((item) => normalizeDocumentVersion(item))
+      .filter((item): item is DocumentVersion => Boolean(item));
   } catch {
     return [];
   }

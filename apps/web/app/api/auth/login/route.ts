@@ -1,9 +1,4 @@
-import {
-  AUTH_COOKIE_NAME,
-  authenticateUser,
-  createSessionToken,
-  getAuthCookieOptions,
-} from "@/lib/server-auth";
+import { AUTH_COOKIE_NAME, authenticateUser, createSessionToken, getAuthCookieOptions } from "@/lib/server-auth";
 import type { LoginPayload } from "@/lib/auth";
 import { NextResponse } from "next/server";
 
@@ -26,7 +21,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "请输入账号、密码和登录角色。" }, { status: 400 });
   }
 
-  const session = authenticateUser(payload);
+  const session = await authenticateUser(payload);
   if (!session) {
     return NextResponse.json({ error: "账号、密码或登录角色不正确。" }, { status: 401 });
   }
