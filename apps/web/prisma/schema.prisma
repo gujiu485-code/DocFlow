@@ -1,0 +1,31 @@
+generator client {
+  provider = "prisma-client"
+  output   = "./generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Document {
+  id              String    @id
+  title           String    @default("Untitled")
+  contentJson     Json      @map("content_json")
+  contentText     String    @default("") @map("content_text")
+  tags            String[]  @default([])
+  summary         String    @default("")
+  parentId        String?   @map("parent_id")
+  sortOrder       Int       @default(0) @map("sort_order")
+  status          String    @default("draft")
+  knowledgeStatus String    @default("none") @map("knowledge_status")
+  ownerId         String?   @map("owner_id")
+  memberAccess    Json      @default("[]") @map("member_access")
+  deletedAt       DateTime? @map("deleted_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@index([parentId])
+  @@index([ownerId])
+  @@index([deletedAt])
+  @@map("documents")
+}

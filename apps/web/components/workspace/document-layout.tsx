@@ -72,10 +72,12 @@ import {
   getDescendantDocumentIds,
   getChildDocuments,
   loadDocuments,
+  loadDocumentsFromDatabase,
   loadExpandedDocumentIds,
   isDraftDocumentEmpty,
   saveActiveDocumentId,
   saveDocuments,
+  saveDocumentsToDatabase,
   saveExpandedDocumentIds,
   materializeDraftDocument,
   type DocumentMetaUpdate,
@@ -119,13 +121,19 @@ export function DocumentLayout() {
   const [contentAuditDocumentIds, setContentAuditDocumentIds] = useState<Set<string>>(new Set());
   const [documentFilter, setDocumentFilter] = useState<DocumentFilter>(defaultDocumentFilter);
 
-  const persistDocuments = useDebouncedCallback((nextDocuments: DocumentItem[]) => {
+  const persistDocumentsNow = async (nextDocuments: DocumentItem[]) => {
     try {
       saveDocuments(nextDocuments);
+      await saveDocumentsToDatabase(nextDocuments);
       setSaveStatus("saved");
-    } catch {
+    } catch (error) {
+      console.error("数据库文档保存失败，已保留浏览器本地副本。", error);
       setSaveStatus("error");
     }
+  };
+
+  const persistDocuments = useDebouncedCallback((nextDocuments: DocumentItem[]) => {
+    void persistDocumentsNow(nextDocuments);
   }, 500);
 
   const commitDocumentVersions = (updater: (current: DocumentVersion[]) => DocumentVersion[]) => {
@@ -187,29 +195,47 @@ export function DocumentLayout() {
   useEffect(() => {
     let cancelled = false;
     const loadedKnowledgeIndex = loadKnowledgeIndex();
-    const loadedDocuments = loadDocuments();
-    let recoveredPendingStatus = false;
-    const recoveredDocuments = loadedDocuments.map((document) => {
-      if (document.knowledgeStatus !== "pending") return document;
-      const knowledgeStatus: DocumentItem["knowledgeStatus"] = isDocumentKnowledgeIndexStale(document, loadedKnowledgeIndex)
-        ? "outdated"
-        : "indexed";
-
-      recoveredPendingStatus = true;
-      return {
-        ...document,
-        // pending 是前端临时任务状态，刷新后没有后台任务可恢复；根据本地索引是否最新恢复成已入库或待同步。
-        knowledgeStatus,
-      };
-    });
     const loadedExpandedIds = loadExpandedDocumentIds();
-
-    if (recoveredPendingStatus) {
-      saveDocuments(recoveredDocuments);
-    }
 
     void (async () => {
       const session = await loadAuthSession();
+      let loadedDocuments = loadDocuments();
+
+      try {
+        const databaseDocuments = await loadDocumentsFromDatabase();
+        if (databaseDocuments) {
+          loadedDocuments = databaseDocuments;
+          saveDocuments(databaseDocuments);
+        }
+      } catch (error) {
+        console.error("数据库文档加载失败，已改用浏览器本地缓存。", error);
+      }
+
+      let recoveredPendingStatus = false;
+      const recoveredDocuments = loadedDocuments.map((document) => {
+        if (document.knowledgeStatus !== "pending") return document;
+        const knowledgeStatus: DocumentItem["knowledgeStatus"] = isDocumentKnowledgeIndexStale(
+          document,
+          loadedKnowledgeIndex,
+        )
+          ? "outdated"
+          : "indexed";
+
+        recoveredPendingStatus = true;
+        return {
+          ...document,
+          // pending 是前端临时任务状态，刷新后没有后台任务可恢复；根据本地索引是否最新恢复成已入库或待同步。
+          knowledgeStatus,
+        };
+      });
+
+      if (recoveredPendingStatus) {
+        saveDocuments(recoveredDocuments);
+        void saveDocumentsToDatabase(recoveredDocuments).catch((error) => {
+          console.error("恢复知识库状态后同步数据库失败。", error);
+        });
+      }
+
       if (cancelled) return;
 
       setAuthSession(session);
@@ -242,7 +268,10 @@ export function DocumentLayout() {
     () => getAccessibleDocuments(allVisibleDocuments, authSession),
     [allVisibleDocuments, authSession],
   );
-  const visibleDocumentIds = useMemo(() => getAccessibleDocumentIds(allVisibleDocuments, authSession), [allVisibleDocuments, authSession]);
+  const visibleDocumentIds = useMemo(
+    () => getAccessibleDocumentIds(allVisibleDocuments, authSession),
+    [allVisibleDocuments, authSession],
+  );
   const accessibleTreeDocuments = useMemo(() => createDocumentTreeView(visibleDocuments), [visibleDocuments]);
   const visibleKnowledgeIndex = useMemo(
     () => filterKnowledgeIndexByDocumentIds(knowledgeIndex, visibleDocumentIds),
@@ -257,7 +286,11 @@ export function DocumentLayout() {
     [accessibleTreeDocuments, documentFilter],
   );
   const deletedDocuments = useMemo(
-    () => getAccessibleDocuments(documents.filter((document) => document.deletedAt), authSession),
+    () =>
+      getAccessibleDocuments(
+        documents.filter((document) => document.deletedAt),
+        authSession,
+      ),
     [documents, authSession],
   );
   const activeDocument = visibleDocuments.find((document) => document.id === activeDocumentId) ?? null;
@@ -275,7 +308,9 @@ export function DocumentLayout() {
   useEffect(() => {
     if (draftDocument || isDefaultDocumentFilter(documentFilter)) return;
 
-    const activeDocumentInFilter = activeDocumentId ? sidebarDocuments.some((document) => document.id === activeDocumentId) : false;
+    const activeDocumentInFilter = activeDocumentId
+      ? sidebarDocuments.some((document) => document.id === activeDocumentId)
+      : false;
     if (activeDocumentInFilter) return;
 
     setActiveDocumentId(directFilteredDocuments[0]?.id ?? sidebarDocuments[0]?.id ?? null);
@@ -316,12 +351,7 @@ export function DocumentLayout() {
       const nextDocuments = updater(current);
       setSaveStatus("saving");
       if (options?.immediate) {
-        try {
-          saveDocuments(nextDocuments);
-          setSaveStatus("saved");
-        } catch {
-          setSaveStatus("error");
-        }
+        void persistDocumentsNow(nextDocuments);
       } else {
         persistDocuments(nextDocuments);
       }
@@ -363,10 +393,10 @@ export function DocumentLayout() {
           ? {
               ...member,
               ...updates,
-              role: member.role === "owner" ? "owner" : updates.role ?? member.role,
+              role: member.role === "owner" ? "owner" : (updates.role ?? member.role),
               updatedAt: now,
             }
-        : member,
+          : member,
       ),
     );
     if (targetMember) {
@@ -402,7 +432,9 @@ export function DocumentLayout() {
       return null;
     }
 
-    const siblingCount = documents.filter((document) => document.parentId === nextDraftDocument.parentId && !document.deletedAt).length;
+    const siblingCount = documents.filter(
+      (document) => document.parentId === nextDraftDocument.parentId && !document.deletedAt,
+    ).length;
     const nextDocument = materializeDraftDocument(nextDraftDocument, siblingCount, authSession?.memberId);
 
     commitDocuments((current) => [...current, nextDocument], { immediate: true });
@@ -442,7 +474,12 @@ export function DocumentLayout() {
     setPreviousDocumentId(activeDocumentId);
     setActiveDocumentId(null);
     setDraftDocument(
-      createDraftDocument(parentId, getTemplateBodyContent(template), getTemplateBodyText(template), getTemplateDraftTitle(template)),
+      createDraftDocument(
+        parentId,
+        getTemplateBodyContent(template),
+        getTemplateBodyText(template),
+        getTemplateDraftTitle(template),
+      ),
     );
     setTemplatePickerOpen(false);
 
@@ -513,10 +550,15 @@ export function DocumentLayout() {
 
     const candidateIds = [documentId, ...getDescendantDocumentIds(documents, documentId)];
     const idsToDelete = new Set(
-      candidateIds.filter((id) => canAccessDocument(authSession, documents.find((document) => document.id === id))),
+      candidateIds.filter((id) =>
+        canAccessDocument(
+          authSession,
+          documents.find((document) => document.id === id),
+        ),
+      ),
     );
     const nextActiveDocumentId = idsToDelete.has(activeDocumentId ?? "")
-      ? visibleDocuments.find((document) => !idsToDelete.has(document.id))?.id ?? null
+      ? (visibleDocuments.find((document) => !idsToDelete.has(document.id))?.id ?? null)
       : activeDocumentId;
     const now = new Date().toISOString();
 
@@ -548,7 +590,12 @@ export function DocumentLayout() {
 
     const candidateIds = [documentId, ...getDescendantDocumentIds(documents, documentId)];
     const idsToRestore = new Set(
-      candidateIds.filter((id) => canAccessDocument(authSession, documents.find((document) => document.id === id))),
+      candidateIds.filter((id) =>
+        canAccessDocument(
+          authSession,
+          documents.find((document) => document.id === id),
+        ),
+      ),
     );
     const now = new Date().toISOString();
 
@@ -584,10 +631,15 @@ export function DocumentLayout() {
 
     const candidateIds = [documentId, ...getDescendantDocumentIds(documents, documentId)];
     const idsToDelete = new Set(
-      candidateIds.filter((id) => canAccessDocument(authSession, documents.find((document) => document.id === id))),
+      candidateIds.filter((id) =>
+        canAccessDocument(
+          authSession,
+          documents.find((document) => document.id === id),
+        ),
+      ),
     );
     const nextActiveDocumentId = idsToDelete.has(activeDocumentId ?? "")
-      ? visibleDocuments.find((document) => !idsToDelete.has(document.id))?.id ?? null
+      ? (visibleDocuments.find((document) => !idsToDelete.has(document.id))?.id ?? null)
       : activeDocumentId;
 
     commitDocuments((current) => current.filter((document) => !idsToDelete.has(document.id)), { immediate: true });
@@ -666,7 +718,8 @@ export function DocumentLayout() {
               contentJson: payload.json,
               contentText: payload.text,
               updatedAt: new Date().toISOString(),
-              knowledgeStatus: document.knowledgeStatus === "indexed" ? "outdated" : document.knowledgeStatus ?? "none",
+              knowledgeStatus:
+                document.knowledgeStatus === "indexed" ? "outdated" : (document.knowledgeStatus ?? "none"),
             }
           : document,
       ),
@@ -718,7 +771,9 @@ export function DocumentLayout() {
         return {
           ...document,
           ...updates,
-          knowledgeStatus: shouldMarkKnowledgeOutdated ? "outdated" : updates.knowledgeStatus ?? document.knowledgeStatus,
+          knowledgeStatus: shouldMarkKnowledgeOutdated
+            ? "outdated"
+            : (updates.knowledgeStatus ?? document.knowledgeStatus),
           updatedAt: now,
         };
       }),
@@ -742,7 +797,9 @@ export function DocumentLayout() {
     commitDocuments(
       (current) =>
         current.map((document) =>
-          document.id === documentId && !document.deletedAt ? { ...document, knowledgeStatus, updatedAt: now } : document,
+          document.id === documentId && !document.deletedAt
+            ? { ...document, knowledgeStatus, updatedAt: now }
+            : document,
         ),
       { immediate: true },
     );
@@ -783,7 +840,10 @@ export function DocumentLayout() {
         if (payload.chunks.length === 0) {
           setDocumentKnowledgeStatus(documentId, "failed");
           commitKnowledgeSyncLogs((current) =>
-            appendKnowledgeSyncLog(current, createKnowledgeSyncLog(document, "failed", "同步失败：没有可入库的标题或正文内容。")),
+            appendKnowledgeSyncLog(
+              current,
+              createKnowledgeSyncLog(document, "failed", "同步失败：没有可入库的标题或正文内容。"),
+            ),
           );
           return;
         }
@@ -807,9 +867,7 @@ export function DocumentLayout() {
           }
 
           const remoteMessage =
-            typeof remoteResult?.message === "string"
-              ? remoteResult.message
-              : "后端 RAG 未返回同步详情。";
+            typeof remoteResult?.message === "string" ? remoteResult.message : "后端 RAG 未返回同步详情。";
 
           setDocumentKnowledgeStatus(documentId, "indexed");
           commitKnowledgeSyncLogs((current) =>
@@ -871,7 +929,9 @@ export function DocumentLayout() {
     }
 
     const summary = typeof payload?.summary === "string" ? payload.summary : "";
-    const tags = Array.isArray(payload?.tags) ? payload.tags.filter((tag: unknown): tag is string => typeof tag === "string") : [];
+    const tags = Array.isArray(payload?.tags)
+      ? payload.tags.filter((tag: unknown): tag is string => typeof tag === "string")
+      : [];
     if (!summary && tags.length === 0) throw new Error("AI 没有返回可用的摘要或标签。");
 
     updateDocumentMeta(documentId, {
@@ -904,7 +964,8 @@ export function DocumentLayout() {
                 contentJson: cloneDocumentContent(version.contentJson),
                 contentText: version.contentText,
                 updatedAt: new Date().toISOString(),
-                knowledgeStatus: document.knowledgeStatus === "indexed" ? "outdated" : document.knowledgeStatus ?? "none",
+                knowledgeStatus:
+                  document.knowledgeStatus === "indexed" ? "outdated" : (document.knowledgeStatus ?? "none"),
               }
             : document,
         ),
@@ -929,7 +990,10 @@ export function DocumentLayout() {
   const handleLogin = (session: AuthSession) => {
     setAuthSession(session);
     setAuditLogs((current) => {
-      const nextLogs = appendAuditLog(current, createAuditLog(session, { action: "login", detail: "进入 DocFlow AI 工作区" }));
+      const nextLogs = appendAuditLog(
+        current,
+        createAuditLog(session, { action: "login", detail: "进入 DocFlow AI 工作区" }),
+      );
       saveAuditLogs(nextLogs);
       return nextLogs;
     });
@@ -1029,7 +1093,11 @@ export function DocumentLayout() {
           onSyncAllKnowledge={syncAllKnowledgeDocuments}
         />
       )}
-      <DocumentTemplatePicker open={templatePickerOpen} onOpenChange={setTemplatePickerOpen} onSelect={createDocument} />
+      <DocumentTemplatePicker
+        open={templatePickerOpen}
+        onOpenChange={setTemplatePickerOpen}
+        onSelect={createDocument}
+      />
       <KnowledgeSyncCenter
         open={syncCenterOpen}
         documents={visibleDocuments}

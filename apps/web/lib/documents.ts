@@ -145,14 +145,19 @@ export const createDefaultDocuments = (): DocumentItem[] => {
   return [root, child];
 };
 
-const normalizeDocument = (value: Partial<DocumentItem> & Record<string, unknown>): DocumentItem => {
+export const normalizeDocument = (value: Partial<DocumentItem> & Record<string, unknown>): DocumentItem => {
   const now = new Date().toISOString();
 
   return {
     id: typeof value.id === "string" ? value.id : createDocumentId(),
     title: typeof value.title === "string" ? value.title : "Untitled",
     contentJson: value.contentJson ?? value.content ?? createEmptyEditorContent(),
-    contentText: typeof value.contentText === "string" ? value.contentText : typeof value.markdown === "string" ? value.markdown : "",
+    contentText:
+      typeof value.contentText === "string"
+        ? value.contentText
+        : typeof value.markdown === "string"
+          ? value.markdown
+          : "",
     tags: Array.isArray(value.tags) ? value.tags.filter((tag): tag is string => typeof tag === "string") : [],
     summary: typeof value.summary === "string" ? value.summary : "",
     parentId: typeof value.parentId === "string" ? value.parentId : null,
@@ -161,7 +166,9 @@ const normalizeDocument = (value: Partial<DocumentItem> & Record<string, unknown
     updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : now,
     deletedAt: typeof value.deletedAt === "string" ? value.deletedAt : null,
     status:
-      value.status === "reviewing" || value.status === "published" || value.status === "archived" ? value.status : "draft",
+      value.status === "reviewing" || value.status === "published" || value.status === "archived"
+        ? value.status
+        : "draft",
     knowledgeStatus:
       value.knowledgeStatus === "pending" ||
       value.knowledgeStatus === "indexed" ||
@@ -236,6 +243,50 @@ export const loadDocuments = (): DocumentItem[] => {
 export const saveDocuments = (documents: DocumentItem[]) => {
   if (typeof window === "undefined") return;
   window.localStorage.setItem(DOCUMENTS_STORAGE_KEY, JSON.stringify(documents));
+};
+
+export const loadDocumentsFromDatabase = async (): Promise<DocumentItem[] | null> => {
+  const response = await fetch("/api/documents", {
+    method: "GET",
+    credentials: "include",
+    cache: "no-store",
+  });
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    if (payload?.enabled === false) return null;
+    throw new Error(typeof payload?.error === "string" ? payload.error : "数据库文档加载失败。");
+  }
+
+  if (!Array.isArray(payload?.documents)) {
+    throw new Error("数据库文档响应格式无效。");
+  }
+
+  return normalizeSortOrder(
+    payload.documents.map((item: Partial<DocumentItem> & Record<string, unknown>) => normalizeDocument(item)),
+  );
+};
+
+export const saveDocumentsToDatabase = async (documents: DocumentItem[]) => {
+  const response = await fetch("/api/documents", {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    credentials: "include",
+    body: JSON.stringify({ documents }),
+  });
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    if (payload?.enabled === false) return { enabled: false, message: payload.message as string | undefined };
+    throw new Error(typeof payload?.error === "string" ? payload.error : "数据库文档保存失败。");
+  }
+
+  return {
+    enabled: true,
+    count: typeof payload?.count === "number" ? payload.count : documents.length,
+  };
 };
 
 export const loadActiveDocumentId = () => {
