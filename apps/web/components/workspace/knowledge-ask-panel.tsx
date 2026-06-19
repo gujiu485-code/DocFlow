@@ -2,12 +2,22 @@
 
 import { Button } from "@/components/tailwind/ui/button";
 import {
-  getRelevantKnowledgeChunks,
+  getKnowledgeIndexChunkCount,
   type KnowledgeIndexStore,
   type KnowledgeSearchResult,
 } from "@/lib/knowledge-base";
 import { cn } from "@/lib/utils";
-import { Bot, ChevronDown, FileText, Loader2, MessageSquareText, RadioTower, Send, Sparkles, TriangleAlert } from "lucide-react";
+import {
+  Bot,
+  ChevronDown,
+  FileText,
+  Loader2,
+  MessageSquareText,
+  RadioTower,
+  Send,
+  Sparkles,
+  TriangleAlert,
+} from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type AskCitation = {
@@ -58,28 +68,77 @@ export function KnowledgeAskPanel({
   const [citations, setCitations] = useState<AskCitation[]>([]);
   const [answerProvider, setAnswerProvider] = useState<AskResponse["provider"]>();
   const [retrievedChunks, setRetrievedChunks] = useState<RagDebugChunk[]>([]);
+  const [previewMatches, setPreviewMatches] = useState<KnowledgeSearchResult[]>([]);
   const [debugOpen, setDebugOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [askedQuestion, setAskedQuestion] = useState("");
   const lastAutoAskKey = useRef<number | null>(null);
-
-  const previewMatches = useMemo(
-    () => (question.trim() ? getRelevantKnowledgeChunks(knowledgeIndex.chunks, question, 4) : []),
-    [knowledgeIndex.chunks, question],
+  const chunkCount = useMemo(() => getKnowledgeIndexChunkCount(knowledgeIndex), [knowledgeIndex]);
+  const allowedDocumentIds = useMemo(
+    () => knowledgeIndex.documents.map((document) => document.documentId),
+    [knowledgeIndex.documents],
   );
-  const canAsk = Boolean(question.trim() && knowledgeIndex.chunks.length && !asking);
+  const canAsk = Boolean(question.trim() && chunkCount && !asking);
 
   useEffect(() => {
     setQuestion(initialQuestion);
   }, [initialQuestion]);
+
+  useEffect(() => {
+    const keyword = question.trim();
+
+    if (!keyword || answer) {
+      setPreviewMatches([]);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => {
+      void fetch("/api/knowledge/search", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        signal: controller.signal,
+        body: JSON.stringify({
+          keyword,
+          documentIds: allowedDocumentIds,
+          limit: 4,
+        }),
+      })
+        .then(async (response) => {
+          const payload = await response.json().catch(() => null);
+          if (!response.ok) {
+            throw new Error(typeof payload?.error === "string" ? payload.error : "后端知识库搜索失败。");
+          }
+
+          setPreviewMatches(
+            Array.isArray(payload?.results)
+              ? payload.results
+                  .map((item: unknown) => normalizeKnowledgeSearchResult(item))
+                  .filter((item: KnowledgeSearchResult | null): item is KnowledgeSearchResult => Boolean(item))
+              : [],
+          );
+        })
+        .catch((error) => {
+          if (controller.signal.aborted) return;
+          console.error("后端知识库预览搜索失败。", error);
+          setPreviewMatches([]);
+        });
+    }, 250);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timeoutId);
+    };
+  }, [allowedDocumentIds, answer, question]);
 
   const askKnowledgeBase = async (questionOverride?: string) => {
     const nextQuestion = (questionOverride ?? question).trim();
     if (!nextQuestion || asking) return;
 
     setQuestion(nextQuestion);
-    const matchedChunks = getRelevantKnowledgeChunks(knowledgeIndex.chunks, nextQuestion, 5);
-    if (!matchedChunks.length) {
+    if (!allowedDocumentIds.length || !chunkCount) {
       setError("当前还没有可用于回答的知识片段，请先同步知识库。");
       setAnswer("");
       setCitations([]);
@@ -104,8 +163,7 @@ export function KnowledgeAskPanel({
         },
         body: JSON.stringify({
           question: nextQuestion,
-          allowedDocumentIds: knowledgeIndex.documents.map((document) => document.documentId),
-          chunks: matchedChunks.map(toAskContextChunk),
+          allowedDocumentIds,
         }),
       });
       const payload = await response.json().catch(() => null);
@@ -144,7 +202,9 @@ export function KnowledgeAskPanel({
             <Bot className="h-4 w-4 text-muted-foreground" />
             <h2 className="text-sm font-semibold">AI 知识库问答</h2>
           </div>
-          <p className="mt-1 text-xs text-muted-foreground">从已入库知识片段中检索上下文，再由 DeepSeek 生成带来源的答案。</p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            从已入库知识片段中检索上下文，再由 DeepSeek 生成带来源的答案。
+          </p>
         </div>
         <Button variant="outline" size="sm" className="h-8 gap-1.5" onClick={onOpenSyncCenter}>
           <RadioTower className="h-3.5 w-3.5" />
@@ -162,7 +222,7 @@ export function KnowledgeAskPanel({
         <div className="mt-3 flex flex-wrap items-center justify-between gap-3 border-t pt-3">
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <MessageSquareText className="h-3.5 w-3.5" />
-            已索引 {knowledgeIndex.documents.length} 篇文档，{knowledgeIndex.chunks.length} 个片段
+            已索引 {knowledgeIndex.documents.length} 篇文档，{chunkCount} 个片段
           </div>
           <Button className="h-8 gap-2" disabled={!canAsk} onClick={() => askKnowledgeBase()}>
             {asking ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
@@ -171,7 +231,7 @@ export function KnowledgeAskPanel({
         </div>
       </div>
 
-      {!knowledgeIndex.chunks.length && (
+      {!chunkCount && (
         <div className="mt-3 flex gap-2 rounded-md border border-dashed px-3 py-3 text-xs leading-5 text-muted-foreground">
           <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
           <span>当前还没有知识片段，请先在任务中心同步文档后再提问。</span>
@@ -227,7 +287,9 @@ export function KnowledgeAskPanel({
                     <FileText className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
                   </div>
                   {citation.headingPath.length > 0 && (
-                    <div className="mt-1 truncate text-xs text-muted-foreground">{citation.headingPath.join(" / ")}</div>
+                    <div className="mt-1 truncate text-xs text-muted-foreground">
+                      {citation.headingPath.join(" / ")}
+                    </div>
                   )}
                   <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{citation.quote}</p>
                 </button>
@@ -263,7 +325,9 @@ function ReferencePreview({
     >
       <div className="flex items-center justify-between gap-3">
         <span className="min-w-0 truncate text-sm font-medium">{result.documentTitle}</span>
-        <span className="shrink-0 text-xs text-muted-foreground">{result.score > 0 ? `score ${result.score}` : "兜底片段"}</span>
+        <span className="shrink-0 text-xs text-muted-foreground">
+          {result.score > 0 ? `score ${result.score}` : "兜底片段"}
+        </span>
       </div>
       {result.headingPath.length > 0 && (
         <div className="mt-1 truncate text-xs text-muted-foreground">{result.headingPath.join(" / ")}</div>
@@ -273,15 +337,28 @@ function ReferencePreview({
   );
 }
 
-function toAskContextChunk(result: KnowledgeSearchResult) {
+function normalizeKnowledgeSearchResult(value: unknown): KnowledgeSearchResult | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Partial<KnowledgeSearchResult> & Record<string, unknown>;
+  const id = typeof record.id === "string" ? record.id : "";
+  const documentId = typeof record.documentId === "string" ? record.documentId : "";
+  const text = typeof record.text === "string" ? record.text : "";
+  if (!id || !documentId || !text) return null;
+
   return {
-    id: result.id,
-    documentId: result.documentId,
-    documentTitle: result.documentTitle,
-    headingPath: result.headingPath,
-    text: result.text,
-    score: result.score,
-    snippet: result.snippet,
+    id,
+    documentId,
+    documentTitle: typeof record.documentTitle === "string" ? record.documentTitle : "无标题",
+    chunkIndex: typeof record.chunkIndex === "number" ? record.chunkIndex : 0,
+    text,
+    headingPath: Array.isArray(record.headingPath)
+      ? record.headingPath.filter((heading): heading is string => typeof heading === "string")
+      : [],
+    contentHash: typeof record.contentHash === "string" ? record.contentHash : "",
+    createdAt: typeof record.createdAt === "string" ? record.createdAt : new Date().toISOString(),
+    updatedAt: typeof record.updatedAt === "string" ? record.updatedAt : new Date().toISOString(),
+    score: typeof record.score === "number" && Number.isFinite(record.score) ? record.score : 0,
+    snippet: typeof record.snippet === "string" ? record.snippet : text.slice(0, 120),
   };
 }
 
@@ -334,7 +411,7 @@ function normalizeAskResponse(value: unknown): AskResponse {
 function getProviderLabel(provider: NonNullable<AskResponse["provider"]>) {
   if (provider === "qdrant") return "LangChain + Qdrant";
   if (provider === "pgvector") return "LangChain + pgvector";
-  return "本地片段";
+  return "后端数据库片段";
 }
 
 function normalizeDebugChunk(value: unknown): RagDebugChunk | null {
@@ -386,7 +463,9 @@ function RagDebugPanel({
             {getProviderLabel(provider ?? "local")} · 命中 {chunks.length} 个片段
           </span>
         </span>
-        <ChevronDown className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")} />
+        <ChevronDown
+          className={cn("h-4 w-4 shrink-0 text-muted-foreground transition-transform", open && "rotate-180")}
+        />
       </button>
 
       {open && (
@@ -410,9 +489,13 @@ function RagDebugPanel({
                   </div>
                   <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                     <span>{getProviderLabel(chunk.provider)}</span>
-                    {chunk.headingPath.length > 0 && <span className="min-w-0 truncate">{chunk.headingPath.join(" / ")}</span>}
+                    {chunk.headingPath.length > 0 && (
+                      <span className="min-w-0 truncate">{chunk.headingPath.join(" / ")}</span>
+                    )}
                   </div>
-                  <p className="mt-2 line-clamp-4 whitespace-pre-wrap text-xs leading-5 text-muted-foreground">{chunk.text}</p>
+                  <p className="mt-2 line-clamp-4 whitespace-pre-wrap text-xs leading-5 text-muted-foreground">
+                    {chunk.text}
+                  </p>
                 </button>
               ))}
             </div>

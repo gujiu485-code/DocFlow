@@ -1,8 +1,8 @@
 import {
-  deleteDocumentsFromLangChainRag,
-  getLangChainRagStatus,
-  upsertDocumentsToLangChainRag,
-} from "@/lib/rag/langchain-engine";
+  deleteDocumentsFromKnowledgeBase,
+  getKnowledgeState,
+  upsertDocumentsToKnowledgeBase,
+} from "@/lib/knowledge-service";
 import type { RagIndexableDocument } from "@/lib/rag/types";
 import { createEmptyEditorContent } from "@/lib/content";
 
@@ -23,7 +23,10 @@ const normalizeDocument = (value: unknown): RagIndexableDocument | null => {
     contentJson: record.contentJson ?? createEmptyEditorContent(),
     contentText: clampText(record.contentText, 100_000),
     tags: Array.isArray(record.tags)
-      ? record.tags.map((tag) => clampText(tag, 40)).filter(Boolean).slice(0, 20)
+      ? record.tags
+          .map((tag) => clampText(tag, 40))
+          .filter(Boolean)
+          .slice(0, 20)
       : [],
     summary: clampText(record.summary, 1000),
     parentId: typeof record.parentId === "string" ? record.parentId : null,
@@ -44,7 +47,16 @@ const normalizeDocumentIds = (value: unknown) =>
     .slice(0, 100);
 
 export async function GET() {
-  return Response.json(getLangChainRagStatus());
+  try {
+    return Response.json(await getKnowledgeState());
+  } catch (error) {
+    return Response.json(
+      {
+        error: error instanceof Error ? error.message : "后端知识库状态加载失败。",
+      },
+      { status: 500 },
+    );
+  }
 }
 
 export async function POST(req: Request): Promise<Response> {
@@ -56,11 +68,13 @@ export async function POST(req: Request): Promise<Response> {
   }
 
   try {
-    return Response.json(await upsertDocumentsToLangChainRag(documents));
+    const result = await upsertDocumentsToKnowledgeBase(documents);
+    const status = result.indexedDocuments > 0 ? 200 : 400;
+    return Response.json(result, { status });
   } catch (error) {
     return Response.json(
       {
-        error: error instanceof Error ? error.message : "后端 RAG 入库失败。",
+        error: error instanceof Error ? error.message : "后端知识库入库失败。",
       },
       { status: 500 },
     );
@@ -76,11 +90,11 @@ export async function DELETE(req: Request): Promise<Response> {
   }
 
   try {
-    return Response.json(await deleteDocumentsFromLangChainRag(documentIds));
+    return Response.json(await deleteDocumentsFromKnowledgeBase(documentIds));
   } catch (error) {
     return Response.json(
       {
-        error: error instanceof Error ? error.message : "后端 RAG 删除失败。",
+        error: error instanceof Error ? error.message : "后端知识库删除失败。",
       },
       { status: 500 },
     );

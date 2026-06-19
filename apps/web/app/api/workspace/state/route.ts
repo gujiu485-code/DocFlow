@@ -1,7 +1,6 @@
 import { normalizeAuditLog, type AuditLogItem } from "@/lib/audit-logs";
 import { normalizeDocumentVersion, type DocumentVersion } from "@/lib/document-versions";
 import {
-  createEmptyKnowledgeIndex,
   normalizeKnowledgeChunk,
   normalizeKnowledgeIndexedDocument,
   type KnowledgeIndexStore,
@@ -153,29 +152,6 @@ const toKnowledgeDocumentDatabase = (document: KnowledgeIndexStore["documents"][
   indexedAt: parseDate(document.indexedAt),
 });
 
-const toKnowledgeChunkResponse = (chunk: {
-  id: string;
-  documentId: string;
-  documentTitle: string;
-  chunkIndex: number;
-  text: string;
-  headingPath: string[];
-  contentHash: string;
-  createdAt: Date;
-  updatedAt: Date;
-}) =>
-  normalizeKnowledgeChunk({
-    id: chunk.id,
-    documentId: chunk.documentId,
-    documentTitle: chunk.documentTitle,
-    chunkIndex: chunk.chunkIndex,
-    text: chunk.text,
-    headingPath: chunk.headingPath,
-    contentHash: chunk.contentHash,
-    createdAt: chunk.createdAt.toISOString(),
-    updatedAt: chunk.updatedAt.toISOString(),
-  });
-
 const toKnowledgeChunkDatabase = (chunk: KnowledgeIndexStore["chunks"][number]) => ({
   id: chunk.id,
   documentId: chunk.documentId,
@@ -259,9 +235,6 @@ export async function GET() {
     const knowledgeDocuments = await prisma.knowledgeIndexedDocument.findMany({
       orderBy: [{ indexedAt: "desc" }],
     });
-    const knowledgeChunks = await prisma.knowledgeChunk.findMany({
-      orderBy: [{ updatedAt: "desc" }, { chunkIndex: "asc" }],
-    });
     const knowledgeSyncLogs = await prisma.knowledgeSyncLog.findMany({
       orderBy: [{ createdAt: "desc" }],
       take: 50,
@@ -276,9 +249,7 @@ export async function GET() {
         documents: knowledgeDocuments
           .map(toKnowledgeDocumentResponse)
           .filter((item): item is KnowledgeIndexStore["documents"][number] => Boolean(item)),
-        chunks: knowledgeChunks
-          .map(toKnowledgeChunkResponse)
-          .filter((item): item is KnowledgeIndexStore["chunks"][number] => Boolean(item)),
+        chunks: [],
         updatedAt: new Date().toISOString(),
       },
       knowledgeSyncLogs: knowledgeSyncLogs.map(toKnowledgeSyncLogResponse),

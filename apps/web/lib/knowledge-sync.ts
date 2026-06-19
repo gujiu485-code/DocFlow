@@ -1,5 +1,5 @@
 import type { DocumentItem } from "@/lib/documents";
-import { isDocumentKnowledgeIndexStale, type KnowledgeIndexStore } from "@/lib/knowledge-base";
+import type { KnowledgeIndexStore } from "@/lib/knowledge-base";
 
 export type KnowledgeSyncLogStatus = "pending" | "success" | "failed";
 
@@ -80,7 +80,7 @@ export const getKnowledgeSyncCandidates = (documents: DocumentItem[], knowledgeI
       const knowledgeStatus = document.knowledgeStatus ?? "none";
       if (["none", "failed", "outdated"].includes(knowledgeStatus)) return true;
       return knowledgeStatus === "indexed" && knowledgeIndex
-        ? isDocumentKnowledgeIndexStale(document, knowledgeIndex)
+        ? !knowledgeIndex.documents.some((item) => item.documentId === document.id)
         : false;
     })
     .sort((a, b) => {

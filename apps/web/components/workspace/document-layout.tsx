@@ -49,21 +49,15 @@ import {
   type DocumentVersion,
 } from "@/lib/document-versions";
 import {
-  buildDocumentKnowledgeIndex,
   createEmptyKnowledgeIndex,
   filterKnowledgeIndexByDocumentIds,
-  isDocumentKnowledgeIndexStale,
-  loadKnowledgeIndex,
-  removeDocumentsFromKnowledgeIndex,
-  saveKnowledgeIndex,
-  upsertDocumentKnowledgeIndex,
+  normalizeKnowledgeIndexedDocument,
   type KnowledgeIndexStore,
 } from "@/lib/knowledge-base";
 import {
-  appendKnowledgeSyncLog,
-  createKnowledgeSyncLog,
   getKnowledgeSyncCandidates,
   loadKnowledgeSyncLogs,
+  normalizeKnowledgeSyncLog,
   saveKnowledgeSyncLogs,
   type KnowledgeSyncLog,
 } from "@/lib/knowledge-sync";
@@ -98,6 +92,61 @@ import { loadWorkspaceStateFromDatabase, saveWorkspaceStateToDatabase } from "@/
 import { useDebouncedCallback } from "use-debounce";
 import { useEffect, useMemo, useState } from "react";
 import { arrayMove } from "@dnd-kit/sortable";
+
+type KnowledgeStatePayload = {
+  knowledgeIndex: KnowledgeIndexStore;
+  knowledgeSyncLogs: KnowledgeSyncLog[];
+};
+
+const normalizeKnowledgeIndexPayload = (value: unknown): KnowledgeIndexStore => {
+  if (!value || typeof value !== "object") return createEmptyKnowledgeIndex();
+  const record = value as Partial<KnowledgeIndexStore> & Record<string, unknown>;
+
+  return {
+    documents: Array.isArray(record.documents)
+      ? record.documents
+          .map((item) =>
+            item && typeof item === "object"
+              ? normalizeKnowledgeIndexedDocument(
+                  item as Partial<KnowledgeIndexStore["documents"][number]> & Record<string, unknown>,
+                )
+              : null,
+          )
+          .filter((item): item is KnowledgeIndexStore["documents"][number] => Boolean(item))
+      : [],
+    chunks: [],
+    updatedAt: typeof record.updatedAt === "string" ? record.updatedAt : new Date().toISOString(),
+  };
+};
+
+const loadKnowledgeStateFromBackend = async (): Promise<KnowledgeStatePayload | null> => {
+  const response = await fetch("/api/knowledge/index", {
+    method: "GET",
+    credentials: "include",
+    cache: "no-store",
+  });
+  const payload = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    if (payload?.enabled === false) return null;
+    throw new Error(typeof payload?.error === "string" ? payload.error : "后端知识库状态加载失败。");
+  }
+
+  if (payload?.enabled === false) return null;
+
+  return {
+    knowledgeIndex: normalizeKnowledgeIndexPayload(payload?.knowledgeIndex),
+    knowledgeSyncLogs: Array.isArray(payload?.knowledgeSyncLogs)
+      ? payload.knowledgeSyncLogs
+          .map((item: unknown) =>
+            item && typeof item === "object"
+              ? normalizeKnowledgeSyncLog(item as Partial<KnowledgeSyncLog> & Record<string, unknown>)
+              : null,
+          )
+          .filter((item: KnowledgeSyncLog | null): item is KnowledgeSyncLog => Boolean(item?.documentId))
+      : [],
+  };
+};
 
 export function DocumentLayout() {
   const [workspaceReady, setWorkspaceReady] = useState(false);
@@ -148,17 +197,6 @@ export function DocumentLayout() {
     });
   };
 
-  const commitKnowledgeSyncLogs = (updater: (current: KnowledgeSyncLog[]) => KnowledgeSyncLog[]) => {
-    setKnowledgeSyncLogs((current) => {
-      const nextLogs = updater(current);
-      saveKnowledgeSyncLogs(nextLogs);
-      void saveWorkspaceStateToDatabase({ knowledgeSyncLogs: nextLogs }).catch((error) => {
-        console.error("数据库知识库同步日志保存失败，已保留浏览器本地副本。", error);
-      });
-      return nextLogs;
-    });
-  };
-
   const recordAuditLog = (input: AuditLogInput) => {
     if (!authSession) return;
 
@@ -172,15 +210,16 @@ export function DocumentLayout() {
     });
   };
 
-  const commitKnowledgeIndex = (updater: (current: KnowledgeIndexStore) => KnowledgeIndexStore) => {
-    setKnowledgeIndex((current) => {
-      const nextIndex = updater(current);
-      saveKnowledgeIndex(nextIndex);
-      void saveWorkspaceStateToDatabase({ knowledgeIndex: nextIndex }).catch((error) => {
-        console.error("数据库知识库索引保存失败，已保留浏览器本地副本。", error);
-      });
-      return nextIndex;
-    });
+  const refreshKnowledgeState = async () => {
+    try {
+      const state = await loadKnowledgeStateFromBackend();
+      if (!state) return;
+      setKnowledgeIndex(state.knowledgeIndex);
+      setKnowledgeSyncLogs(state.knowledgeSyncLogs);
+      saveKnowledgeSyncLogs(state.knowledgeSyncLogs);
+    } catch (error) {
+      console.error("后端知识库状态刷新失败。", error);
+    }
   };
 
   const deleteDocumentsFromRemoteKnowledge = (documentIds: Iterable<string>) => {
@@ -195,9 +234,17 @@ export function DocumentLayout() {
       body: JSON.stringify({
         documentIds: ids,
       }),
-    }).catch((error) => {
-      console.error("后端知识库删除失败", error);
-    });
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          const payload = await response.json().catch(() => null);
+          throw new Error(typeof payload?.error === "string" ? payload.error : "后端知识库删除失败。");
+        }
+        await refreshKnowledgeState();
+      })
+      .catch((error) => {
+        console.error("后端知识库删除失败", error);
+      });
   };
 
   const snapshotDocument = (document: DocumentItem | undefined, options?: { force?: boolean }) => {
@@ -207,7 +254,7 @@ export function DocumentLayout() {
 
   useEffect(() => {
     let cancelled = false;
-    let loadedKnowledgeIndex = loadKnowledgeIndex();
+    let loadedKnowledgeIndex = createEmptyKnowledgeIndex();
     const loadedExpandedIds = loadExpandedDocumentIds();
 
     void (async () => {
@@ -239,28 +286,32 @@ export function DocumentLayout() {
           saveDocumentVersions(loadedVersions);
           saveKnowledgeSyncLogs(loadedKnowledgeSyncLogs);
           saveAuditLogs(loadedAuditLogs);
-          saveKnowledgeIndex(loadedKnowledgeIndex);
           saveWorkspaceMembers(loadedMembers);
         }
       } catch (error) {
         console.error("数据库工作区状态加载失败，已改用浏览器本地缓存。", error);
       }
 
+      try {
+        const backendKnowledgeState = await loadKnowledgeStateFromBackend();
+        if (backendKnowledgeState) {
+          loadedKnowledgeIndex = backendKnowledgeState.knowledgeIndex;
+          loadedKnowledgeSyncLogs = backendKnowledgeState.knowledgeSyncLogs;
+          saveKnowledgeSyncLogs(loadedKnowledgeSyncLogs);
+        }
+      } catch (error) {
+        console.error("后端知识库状态加载失败，已改用本地缓存的任务记录。", error);
+      }
+
       let recoveredPendingStatus = false;
       const recoveredDocuments = loadedDocuments.map((document) => {
         if (document.knowledgeStatus !== "pending") return document;
-        const knowledgeStatus: DocumentItem["knowledgeStatus"] = isDocumentKnowledgeIndexStale(
-          document,
-          loadedKnowledgeIndex,
-        )
-          ? "outdated"
-          : "indexed";
 
         recoveredPendingStatus = true;
         return {
           ...document,
-          // pending 是前端临时任务状态，刷新后没有后台任务可恢复；根据本地索引是否最新恢复成已入库或待同步。
-          knowledgeStatus,
+          // pending 是前端临时任务状态，刷新后统一恢复为待同步，由后端摘要重新确认入库结果。
+          knowledgeStatus: "outdated" as const,
         };
       });
 
@@ -607,7 +658,6 @@ export function DocumentLayout() {
         ),
       { immediate: true },
     );
-    commitKnowledgeIndex((current) => removeDocumentsFromKnowledgeIndex(current, idsToDelete));
     deleteDocumentsFromRemoteKnowledge(idsToDelete);
     recordAuditLog({
       action: "document.delete",
@@ -682,7 +732,6 @@ export function DocumentLayout() {
 
     commitDocuments((current) => current.filter((document) => !idsToDelete.has(document.id)), { immediate: true });
     commitDocumentVersions((current) => removeDocumentVersions(current, idsToDelete));
-    commitKnowledgeIndex((current) => removeDocumentsFromKnowledgeIndex(current, idsToDelete));
     deleteDocumentsFromRemoteKnowledge(idsToDelete);
     recordAuditLog({
       action: "document.permanent_delete",
@@ -848,14 +897,8 @@ export function DocumentLayout() {
     if (!document) return;
 
     if (document.knowledgeStatus === "pending") {
-      const pendingAlreadyIndexed = !isDocumentKnowledgeIndexStale(document, knowledgeIndex);
       const pendingSince = new Date(document.updatedAt).getTime();
       const pendingStillFresh = Number.isFinite(pendingSince) && Date.now() - pendingSince < 30_000;
-
-      if (pendingAlreadyIndexed) {
-        setDocumentKnowledgeStatus(documentId, "indexed");
-        return;
-      }
 
       if (pendingStillFresh) return;
     }
@@ -866,73 +909,38 @@ export function DocumentLayout() {
       document,
       detail: "发起知识库同步",
     });
-    commitKnowledgeSyncLogs((current) =>
-      appendKnowledgeSyncLog(current, createKnowledgeSyncLog(document, "pending", "文档已加入知识库同步队列。")),
-    );
 
-    // 先保留本地索引用于离线兜底，同时把文档同步到后端 LangChain RAG 引擎。
-    window.setTimeout(() => {
-      void (async () => {
-        const payload = buildDocumentKnowledgeIndex(document);
+    void (async () => {
+      try {
+        const response = await fetch("/api/knowledge/index", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            documents: [document],
+          }),
+        });
+        const remoteResult = await response.json().catch(() => null);
 
-        if (payload.chunks.length === 0) {
-          setDocumentKnowledgeStatus(documentId, "failed");
-          commitKnowledgeSyncLogs((current) =>
-            appendKnowledgeSyncLog(
-              current,
-              createKnowledgeSyncLog(document, "failed", "同步失败：没有可入库的标题或正文内容。"),
-            ),
-          );
-          return;
-        }
-
-        commitKnowledgeIndex((current) => upsertDocumentKnowledgeIndex(current, payload));
-
-        try {
-          const response = await fetch("/api/knowledge/index", {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              documents: [document],
-            }),
-          });
-          const remoteResult = await response.json().catch(() => null);
-
-          if (!response.ok) {
-            throw new Error(typeof remoteResult?.error === "string" ? remoteResult.error : "后端 RAG 入库失败。");
-          }
-
-          const remoteMessage =
-            typeof remoteResult?.message === "string" ? remoteResult.message : "后端 RAG 未返回同步详情。";
-
-          setDocumentKnowledgeStatus(documentId, "indexed");
-          commitKnowledgeSyncLogs((current) =>
-            appendKnowledgeSyncLog(
-              current,
-              createKnowledgeSyncLog(
-                document,
-                "success",
-                `同步成功：本地生成 ${payload.chunks.length} 个知识片段。${remoteMessage}`,
-              ),
-            ),
-          );
-        } catch (error) {
-          setDocumentKnowledgeStatus(documentId, "failed");
-          commitKnowledgeSyncLogs((current) =>
-            appendKnowledgeSyncLog(
-              current,
-              createKnowledgeSyncLog(
-                document,
-                "failed",
-                error instanceof Error ? error.message : "同步失败：后端 RAG 入库异常。",
-              ),
-            ),
+        if (!response.ok) {
+          throw new Error(
+            typeof remoteResult?.error === "string"
+              ? remoteResult.error
+              : typeof remoteResult?.message === "string"
+                ? remoteResult.message
+                : "后端知识库入库失败。",
           );
         }
-      })();
-    }, 900);
+
+        setDocumentKnowledgeStatus(documentId, "indexed");
+        await refreshKnowledgeState();
+      } catch (error) {
+        setDocumentKnowledgeStatus(documentId, "failed");
+        await refreshKnowledgeState();
+        console.error("后端知识库入库失败", error);
+      }
+    })();
   };
 
   const syncAllKnowledgeDocuments = () => {

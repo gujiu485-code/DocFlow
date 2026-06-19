@@ -1,19 +1,13 @@
 "use client";
 
 import { Button } from "@/components/tailwind/ui/button";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/tailwind/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/tailwind/ui/dialog";
 import { KnowledgeStatusBadge } from "@/components/workspace/knowledge-status-badge";
 import type { DocumentItem, KnowledgeStatus } from "@/lib/documents";
 import {
-  isDocumentKnowledgeIndexStale,
-  searchKnowledgeChunks,
+  getKnowledgeIndexChunkCount,
   type KnowledgeIndexStore,
+  type KnowledgeSearchResult,
 } from "@/lib/knowledge-base";
 import {
   getKnowledgeSyncCandidates,
@@ -22,8 +16,18 @@ import {
   type KnowledgeSyncLogStatus,
 } from "@/lib/knowledge-sync";
 import { cn } from "@/lib/utils";
-import { CheckCircle2, Clock3, DatabaseZap, FileText, History, Loader2, RadioTower, Search, TriangleAlert } from "lucide-react";
-import { useMemo, useState } from "react";
+import {
+  CheckCircle2,
+  Clock3,
+  DatabaseZap,
+  FileText,
+  History,
+  Loader2,
+  RadioTower,
+  Search,
+  TriangleAlert,
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 interface KnowledgeSyncCenterProps {
@@ -48,10 +52,16 @@ export function KnowledgeSyncCenter({
   onSyncAll,
 }: KnowledgeSyncCenterProps) {
   const [searchKeyword, setSearchKeyword] = useState("");
-  const syncCandidates = useMemo(() => getKnowledgeSyncCandidates(documents, knowledgeIndex), [documents, knowledgeIndex]);
-  const searchResults = useMemo(
-    () => searchKnowledgeChunks(knowledgeIndex.chunks, searchKeyword),
-    [knowledgeIndex.chunks, searchKeyword],
+  const [searchResults, setSearchResults] = useState<KnowledgeSearchResult[]>([]);
+  const [searching, setSearching] = useState(false);
+  const syncCandidates = useMemo(
+    () => getKnowledgeSyncCandidates(documents, knowledgeIndex),
+    [documents, knowledgeIndex],
+  );
+  const chunkCount = getKnowledgeIndexChunkCount(knowledgeIndex);
+  const allowedDocumentIds = useMemo(
+    () => knowledgeIndex.documents.map((document) => document.documentId),
+    [knowledgeIndex.documents],
   );
   const queueDocuments = useMemo(
     () =>
@@ -70,16 +80,77 @@ export function KnowledgeSyncCenter({
             indexed: 4,
           };
           const statusDiff =
-            priority[getEffectiveKnowledgeStatus(a, knowledgeIndex)] - priority[getEffectiveKnowledgeStatus(b, knowledgeIndex)];
+            priority[getEffectiveKnowledgeStatus(a, knowledgeIndex)] -
+            priority[getEffectiveKnowledgeStatus(b, knowledgeIndex)];
           if (statusDiff !== 0) return statusDiff;
           return new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime();
         }),
     [documents, knowledgeIndex],
   );
 
-  const pendingCount = documents.filter((document) => getEffectiveKnowledgeStatus(document, knowledgeIndex) === "pending").length;
-  const indexedCount = documents.filter((document) => getEffectiveKnowledgeStatus(document, knowledgeIndex) === "indexed").length;
-  const failedCount = documents.filter((document) => getEffectiveKnowledgeStatus(document, knowledgeIndex) === "failed").length;
+  const pendingCount = documents.filter(
+    (document) => getEffectiveKnowledgeStatus(document, knowledgeIndex) === "pending",
+  ).length;
+  const indexedCount = documents.filter(
+    (document) => getEffectiveKnowledgeStatus(document, knowledgeIndex) === "indexed",
+  ).length;
+  const failedCount = documents.filter(
+    (document) => getEffectiveKnowledgeStatus(document, knowledgeIndex) === "failed",
+  ).length;
+
+  useEffect(() => {
+    const keyword = searchKeyword.trim();
+
+    if (!open || !keyword) {
+      setSearchResults([]);
+      setSearching(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => {
+      setSearching(true);
+      void fetch("/api/knowledge/search", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        signal: controller.signal,
+        body: JSON.stringify({
+          keyword,
+          documentIds: allowedDocumentIds,
+          limit: 8,
+        }),
+      })
+        .then(async (response) => {
+          const payload = await response.json().catch(() => null);
+          if (!response.ok) {
+            throw new Error(typeof payload?.error === "string" ? payload.error : "后端知识库搜索失败。");
+          }
+
+          setSearchResults(
+            Array.isArray(payload?.results)
+              ? payload.results
+                  .map((item: unknown) => normalizeKnowledgeSearchResult(item))
+                  .filter((item: KnowledgeSearchResult | null): item is KnowledgeSearchResult => Boolean(item))
+              : [],
+          );
+        })
+        .catch((error) => {
+          if (controller.signal.aborted) return;
+          console.error("后端知识库搜索失败。", error);
+          setSearchResults([]);
+        })
+        .finally(() => {
+          if (!controller.signal.aborted) setSearching(false);
+        });
+    }, 250);
+
+    return () => {
+      controller.abort();
+      window.clearTimeout(timeoutId);
+    };
+  }, [allowedDocumentIds, open, searchKeyword]);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -94,7 +165,7 @@ export function KnowledgeSyncCenter({
         <div className="min-h-0 space-y-4 overflow-y-auto px-5 py-4">
           <div className="grid gap-3 sm:grid-cols-4">
             <SyncStatCard icon={<RadioTower className="h-4 w-4" />} label="已入库" value={indexedCount} />
-            <SyncStatCard icon={<FileText className="h-4 w-4" />} label="知识片段" value={knowledgeIndex.chunks.length} />
+            <SyncStatCard icon={<FileText className="h-4 w-4" />} label="知识片段" value={chunkCount} />
             <SyncStatCard icon={<Loader2 className="h-4 w-4" />} label="同步中" value={pendingCount} />
             <SyncStatCard icon={<TriangleAlert className="h-4 w-4" />} label="失败待重试" value={failedCount} />
           </div>
@@ -117,7 +188,12 @@ export function KnowledgeSyncCenter({
             </div>
 
             {searchKeyword.trim() ? (
-              searchResults.length ? (
+              searching ? (
+                <div className="mt-3 flex items-center justify-center gap-2 rounded-md border border-dashed px-3 py-5 text-center text-sm text-muted-foreground">
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  正在搜索后端知识库...
+                </div>
+              ) : searchResults.length ? (
                 <div className="mt-3 grid gap-2 md:grid-cols-2">
                   {searchResults.slice(0, 4).map((result) => (
                     <button
@@ -131,7 +207,9 @@ export function KnowledgeSyncCenter({
                         <span className="shrink-0 text-xs text-muted-foreground">score {result.score}</span>
                       </div>
                       {result.headingPath.length > 0 && (
-                        <div className="mt-1 truncate text-xs text-muted-foreground">{result.headingPath.join(" / ")}</div>
+                        <div className="mt-1 truncate text-xs text-muted-foreground">
+                          {result.headingPath.join(" / ")}
+                        </div>
                       )}
                       <p className="mt-1 line-clamp-2 text-xs leading-5 text-muted-foreground">{result.snippet}</p>
                     </button>
@@ -144,7 +222,7 @@ export function KnowledgeSyncCenter({
               )
             ) : (
               <div className="mt-3 rounded-md bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
-                当前已索引 {knowledgeIndex.documents.length} 篇文档，共 {knowledgeIndex.chunks.length} 个知识片段。
+                当前已索引 {knowledgeIndex.documents.length} 篇文档，共 {chunkCount} 个知识片段。
               </div>
             )}
           </section>
@@ -167,10 +245,14 @@ export function KnowledgeSyncCenter({
                   {queueDocuments.map((document) => {
                     const knowledgeStatus = getEffectiveKnowledgeStatus(document, knowledgeIndex);
                     const syncing = knowledgeStatus === "pending";
-                    const canSync = knowledgeStatus === "none" || knowledgeStatus === "failed" || knowledgeStatus === "outdated";
+                    const canSync =
+                      knowledgeStatus === "none" || knowledgeStatus === "failed" || knowledgeStatus === "outdated";
 
                     return (
-                      <div key={document.id} className="flex items-center justify-between gap-3 border-b p-3 last:border-b-0">
+                      <div
+                        key={document.id}
+                        className="flex items-center justify-between gap-3 border-b p-3 last:border-b-0"
+                      >
                         <button
                           type="button"
                           className="flex min-w-0 flex-1 items-start gap-2 text-left"
@@ -196,7 +278,11 @@ export function KnowledgeSyncCenter({
                           disabled={!canSync}
                           onClick={() => onSyncDocument(document.id)}
                         >
-                          {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <DatabaseZap className="h-3.5 w-3.5" />}
+                          {syncing ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <DatabaseZap className="h-3.5 w-3.5" />
+                          )}
                           {syncing ? "同步中" : "同步"}
                         </Button>
                       </div>
@@ -250,7 +336,7 @@ export function KnowledgeSyncCenter({
           </div>
 
           <p className="text-xs leading-5 text-muted-foreground">
-            当前已在浏览器本地完成分块与索引持久化，后续可以替换为向量化、RAG 入库任务和后端任务队列。
+            当前分块、索引持久化和检索均由后端完成；前端只负责触发同步、展示任务状态和打开来源文档。
           </p>
         </div>
       </DialogContent>
@@ -299,16 +385,42 @@ function formatDateTime(value: string) {
 
 function getEffectiveKnowledgeStatus(document: DocumentItem, knowledgeIndex: KnowledgeIndexStore): KnowledgeStatus {
   const knowledgeStatus = document.knowledgeStatus ?? "none";
+  const indexedDocument = knowledgeIndex.documents.find((item) => item.documentId === document.id);
 
   if (knowledgeStatus === "indexed") {
-    return isDocumentKnowledgeIndexStale(document, knowledgeIndex) ? "outdated" : "indexed";
+    return indexedDocument ? "indexed" : "outdated";
   }
 
   if (knowledgeStatus !== "pending") return knowledgeStatus;
 
-  if (!isDocumentKnowledgeIndexStale(document, knowledgeIndex)) return "indexed";
+  if (indexedDocument) return "indexed";
 
   const pendingSince = new Date(document.updatedAt).getTime();
   const pendingStillFresh = Number.isFinite(pendingSince) && Date.now() - pendingSince < 30_000;
   return pendingStillFresh ? "pending" : "outdated";
+}
+
+function normalizeKnowledgeSearchResult(value: unknown): KnowledgeSearchResult | null {
+  if (!value || typeof value !== "object") return null;
+  const record = value as Partial<KnowledgeSearchResult> & Record<string, unknown>;
+  const id = typeof record.id === "string" ? record.id : "";
+  const documentId = typeof record.documentId === "string" ? record.documentId : "";
+  const text = typeof record.text === "string" ? record.text : "";
+  if (!id || !documentId || !text) return null;
+
+  return {
+    id,
+    documentId,
+    documentTitle: typeof record.documentTitle === "string" ? record.documentTitle : "无标题",
+    chunkIndex: typeof record.chunkIndex === "number" ? record.chunkIndex : 0,
+    text,
+    headingPath: Array.isArray(record.headingPath)
+      ? record.headingPath.filter((heading): heading is string => typeof heading === "string")
+      : [],
+    contentHash: typeof record.contentHash === "string" ? record.contentHash : "",
+    createdAt: typeof record.createdAt === "string" ? record.createdAt : new Date().toISOString(),
+    updatedAt: typeof record.updatedAt === "string" ? record.updatedAt : new Date().toISOString(),
+    score: typeof record.score === "number" && Number.isFinite(record.score) ? record.score : 0,
+    snippet: typeof record.snippet === "string" ? record.snippet : text.slice(0, 120),
+  };
 }

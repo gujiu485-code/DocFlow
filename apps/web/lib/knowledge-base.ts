@@ -64,6 +64,9 @@ export const createEmptyKnowledgeIndex = (): KnowledgeIndexStore => ({
   updatedAt: new Date().toISOString(),
 });
 
+export const getKnowledgeIndexChunkCount = (index: KnowledgeIndexStore) =>
+  index.chunks.length || index.documents.reduce((total, document) => total + document.chunkCount, 0);
+
 const isRecord = (value: unknown): value is Record<string, unknown> => Boolean(value && typeof value === "object");
 
 const toEditorContentNode = (value: unknown): EditorContentNode | null => {

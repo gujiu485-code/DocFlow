@@ -1,6 +1,6 @@
 import { createOpenAI } from "@ai-sdk/openai";
 import { generateText, type CoreMessage } from "ai";
-import { retrieveFromLangChainRag } from "@/lib/rag/langchain-engine";
+import { retrieveKnowledgeContext } from "@/lib/knowledge-service";
 import type { RagProvider } from "@/lib/rag/types";
 
 export const runtime = "nodejs";
@@ -38,38 +38,6 @@ type AskRetrievedChunk = {
 const clampText = (value: unknown, maxLength: number) =>
   typeof value === "string" ? value.trim().slice(0, maxLength) : "";
 
-const normalizeContextChunks = (value: unknown): AskContextChunk[] => {
-  if (!Array.isArray(value)) return [];
-
-  return value
-    .map((item) => {
-      if (!item || typeof item !== "object") return null;
-      const record = item as Record<string, unknown>;
-      const id = clampText(record.id, 120);
-      const documentId = clampText(record.documentId, 120);
-      const documentTitle = clampText(record.documentTitle, 120) || "无标题";
-      const text = clampText(record.text, 1200);
-
-      if (!id || !documentId || !text) return null;
-
-      const chunk: AskContextChunk = {
-        id,
-        documentId,
-        documentTitle,
-        headingPath: Array.isArray(record.headingPath)
-          ? record.headingPath.filter((heading): heading is string => typeof heading === "string").slice(0, 6)
-          : [],
-        text,
-        score: typeof record.score === "number" && Number.isFinite(record.score) ? record.score : undefined,
-        snippet: clampText(record.snippet, 300),
-      };
-
-      return chunk;
-    })
-    .filter((item): item is AskContextChunk => Boolean(item))
-    .slice(0, 6);
-};
-
 const normalizeDocumentIds = (value: unknown): string[] => {
   if (!Array.isArray(value)) return [];
   return [...new Set(value.map((item) => (typeof item === "string" ? item.trim() : "")).filter(Boolean))].slice(0, 500);
@@ -95,34 +63,6 @@ const createRetrievedChunks = (chunks: AskContextChunk[], provider: AskContextSo
     provider,
   }));
 
-const retrieveBackendChunks = async (
-  question: string,
-  allowedDocumentIds: string[],
-): Promise<{ chunks: AskContextChunk[]; source: AskContextSource }> => {
-  if (!allowedDocumentIds.length) return { chunks: [], source: "local" };
-
-  try {
-    const chunks = await retrieveFromLangChainRag(question, undefined, allowedDocumentIds);
-    if (!chunks.length) return { chunks: [], source: "local" };
-
-    return {
-      source: chunks[0]?.provider ?? "local",
-      chunks: chunks.map((chunk) => ({
-        id: chunk.id,
-        documentId: chunk.documentId,
-        documentTitle: chunk.documentTitle,
-        headingPath: chunk.headingPath,
-        text: chunk.text,
-        score: chunk.score,
-        snippet: chunk.text.slice(0, 300),
-      })),
-    };
-  } catch (error) {
-    console.error("LangChain RAG 检索失败，降级使用前端传入片段。", error);
-    return { chunks: [], source: "local" };
-  }
-};
-
 export async function POST(req: Request): Promise<Response> {
   if (!process.env.DEEPSEEK_API_KEY || process.env.DEEPSEEK_API_KEY === "") {
     return Response.json({ error: "缺少 DEEPSEEK_API_KEY，请在 .env 文件中配置。" }, { status: 400 });
@@ -131,16 +71,14 @@ export async function POST(req: Request): Promise<Response> {
   const body = await req.json();
   const question = clampText(body.question, 500);
   const allowedDocumentIds = normalizeDocumentIds(body.allowedDocumentIds);
-  const allowedDocumentIdSet = new Set(allowedDocumentIds);
-  const fallbackChunks = normalizeContextChunks(body.chunks).filter((chunk) => allowedDocumentIdSet.has(chunk.documentId));
 
   if (!question) {
     return Response.json({ error: "请输入问题。" }, { status: 400 });
   }
 
-  const backendResult = await retrieveBackendChunks(question, allowedDocumentIds);
-  const chunks = backendResult.chunks.length ? backendResult.chunks : fallbackChunks;
-  const contextSource = backendResult.chunks.length ? backendResult.source : "local";
+  const backendResult = await retrieveKnowledgeContext(question, allowedDocumentIds);
+  const chunks: AskContextChunk[] = backendResult.chunks;
+  const contextSource: AskContextSource = backendResult.source;
 
   if (!chunks.length) {
     return Response.json({ error: "没有可用于回答的知识片段，请先同步知识库。" }, { status: 400 });
@@ -173,14 +111,9 @@ export async function POST(req: Request): Promise<Response> {
     },
     {
       role: "user",
-      content: [
-        "请基于下面的知识库资料回答问题。",
-        "",
-        `问题：${question}`,
-        "",
-        "知识库资料：",
-        contextText,
-      ].join("\n"),
+      content: ["请基于下面的知识库资料回答问题。", "", `问题：${question}`, "", "知识库资料：", contextText].join(
+        "\n",
+      ),
     },
   ];
 
